@@ -1,0 +1,1 @@
+!python ../OpenFWI-main/train.py -ds curvevel-b -n test -m FNONetS -g1v 1 -g2v 0 -o fno_models -t curvevel_b_train.txt -v curvevel_b_val.txt  --workers 1 --lr 0.0001 -b 16 -eb 10 -nb 5
