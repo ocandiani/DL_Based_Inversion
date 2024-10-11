@@ -24,15 +24,14 @@ from collections import OrderedDict
 from layers import (
     ConvBlock, 
     DeconvBlock, 
-    SpectralConv2d, 
-    SpectralConv2d_,
-    FactorizedSpectralConv2d,
-    UFourierConvLayer_Old,
-    UFourierConvLayer, 
-    FourierConvLayer, 
+    SpectralConv2d,
+    SpectralConv2d_res, 
+    UFourierConvLayer_conv1x1,
+    UFourierConvLayer,
+    SmallUFourierConvLayer,
+    LargeUFourierConvLayer, 
+    #FourierConvLayer, 
     ConvBlock_Tanh,
-    FourierDeconvBlock,
-    FourierConvBlock_Tanh,
     ResizeConv2DwithBN,
     Conv2DwithBN,
     Conv2DwithBN_Tanh,
@@ -83,7 +82,18 @@ from layers import (
 #         self.up4 = torch.utils.checkpoint(self.up4)
 #         self.outc = torch.utils.checkpoint(self.outc)
 
+NORM_LAYERS = { 'bn': nn.BatchNorm2d, 'in': nn.InstanceNorm2d, 'ln': nn.LayerNorm }
 
+# Replace the key names in the checkpoint in which legacy network building blocks are used 
+def replace_legacy(old_dict):
+    li = []
+    for k, v in old_dict.items():
+        k = (k.replace('Conv2DwithBN', 'layers')
+              .replace('Conv2DwithBN_Tanh', 'layers')
+              .replace('Deconv2DwithBN', 'layers')
+              .replace('ResizeConv2DwithBN', 'layers'))
+        li.append((k, v))
+    return OrderedDict(li)
 
 
 
@@ -156,68 +166,6 @@ class InversionNet(nn.Module):
 class FNONet(nn.Module):
     def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, **kwargs):
         super(FNONet, self).__init__()
-        self.convblock1 = FourierConvLayer(5, dim1, modes1, modes2)
-        self.convblock2_1 = FourierConvLayer(dim1, dim2, modes1, modes2)
-        self.convblock2_2 = FourierConvLayer(dim2, dim2, modes1, modes2)
-        self.convblock3_1 = FourierConvLayer(dim2, dim2, modes1, modes2)
-        self.convblock3_2 = FourierConvLayer(dim2, dim2, modes1, modes2)
-        self.convblock4_1 = FourierConvLayer(dim2, dim3, modes1, modes2)
-        self.convblock4_2 = FourierConvLayer(dim3, dim3, modes1, modes2)
-        self.convblock5_1 = FourierConvLayer(dim3, dim3, modes1, modes2)
-        self.convblock5_2 = FourierConvLayer(dim3, dim3, modes1, modes2)
-        self.convblock6_1 = FourierConvLayer(dim3, dim4, modes1, modes2)
-        self.convblock6_2 = FourierConvLayer(dim4, dim4, modes1, modes2)
-        self.convblock7_1 = FourierConvLayer(dim4, dim4, modes1, modes2)
-        self.convblock7_2 = FourierConvLayer(dim4, dim4, modes1, modes2)
-        self.convblock8 = FourierConvLayer(dim4, dim5, modes1, ceil(70 * sample_spatial / 8))
-        
-        self.deconv1_1 = FourierDeconvBlock(dim5, dim5, modes1, modes2)
-        self.deconv1_2 = FourierConvBlock_Tanh(dim5, dim5, modes1, modes2)
-        self.deconv2_1 = FourierDeconvBlock(dim5, dim4, modes1, modes2)
-        self.deconv2_2 = FourierConvBlock_Tanh(dim4, dim4, modes1, modes2)
-        self.deconv3_1 = FourierDeconvBlock(dim4, dim3, modes1, modes2)
-        self.deconv3_2 = FourierConvBlock_Tanh(dim3, dim3, modes1, modes2)
-        self.deconv4_1 = FourierDeconvBlock(dim3, dim2, modes1, modes2)
-        self.deconv4_2 = FourierConvBlock_Tanh(dim2, dim2, modes1, modes2)
-        self.deconv5_1 = FourierDeconvBlock(dim2, dim1, modes1, modes2)
-        self.deconv5_2 = FourierConvBlock_Tanh(dim1, dim1, modes1, modes2)
-        self.deconv6 = FourierConvBlock_Tanh(dim1, 1, modes1, modes2)
-        
-    def forward(self,x):
-        # Encoder Part
-        x = self.convblock1(x) # (None, 32, 500, 70)
-        x = self.convblock2_1(x) # (None, 64, 250, 70)
-        x = self.convblock2_2(x) # (None, 64, 250, 70)
-        x = self.convblock3_1(x) # (None, 64, 125, 70)
-        x = self.convblock3_2(x) # (None, 64, 125, 70)
-        x = self.convblock4_1(x) # (None, 128, 63, 70) 
-        x = self.convblock4_2(x) # (None, 128, 63, 70)
-        x = self.convblock5_1(x) # (None, 128, 32, 35) 
-        x = self.convblock5_2(x) # (None, 128, 32, 35)
-        x = self.convblock6_1(x) # (None, 256, 16, 18) 
-        x = self.convblock6_2(x) # (None, 256, 16, 18)
-        x = self.convblock7_1(x) # (None, 256, 8, 9) 
-        x = self.convblock7_2(x) # (None, 256, 8, 9)
-        x = self.convblock8(x) # (None, 512, 1, 1)
-        
-        # Decoder Part 
-        x = self.deconv1_1(x) # (None, 512, 5, 5)
-        x = self.deconv1_2(x) # (None, 512, 5, 5)
-        x = self.deconv2_1(x) # (None, 256, 10, 10) 
-        x = self.deconv2_2(x) # (None, 256, 10, 10)
-        x = self.deconv3_1(x) # (None, 128, 20, 20) 
-        x = self.deconv3_2(x) # (None, 128, 20, 20)
-        x = self.deconv4_1(x) # (None, 64, 40, 40) 
-        x = self.deconv4_2(x) # (None, 64, 40, 40)
-        x = self.deconv5_1(x) # (None, 32, 80, 80)
-        x = self.deconv5_2(x) # (None, 32, 80, 80)
-        x = F.pad(x, [-5, -5, -5, -5], mode="constant", value=0) # (None, 32, 70, 70)
-        x = self.deconv6(x) # (None, 1, 70, 70)
-        return x
-
-class FNONet_Small(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, **kwargs):
-        super(FNONet_Small, self).__init__()
         self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
         self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
         self.convblock2_2 = ConvBlock(dim2, dim2, kernel_size=(3, 1), padding=(1, 0))
@@ -238,16 +186,16 @@ class FNONet_Small(nn.Module):
 
         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
         #self.deconv1_2 = ConvBlock(dim5, dim5)
-        self.deconv1_2 = SpectralConv2d_(dim5, dim5, int(modes1/4), int(modes2/4))
+        self.deconv1_2 = SpectralConv2d_res(dim5, dim5, int(modes1/4), int(modes2/4))
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
         #self.deconv2_2 = ConvBlock(dim4, dim4)
-        self.deconv2_2 = SpectralConv2d_(dim4, dim4, int(modes1/2), int(modes2/2))
+        self.deconv2_2 = SpectralConv2d_res(dim4, dim4, int(modes1/2), int(modes2/2))
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
         #self.deconv3_2 = ConvBlock(dim3, dim3)
-        self.deconv3_2 = SpectralConv2d_(dim3, dim3, modes1, modes2)
+        self.deconv3_2 = SpectralConv2d_res(dim3, dim3, modes1, modes2)
         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
         #self.deconv4_2 = ConvBlock(dim2, dim2)
-        self.deconv4_2 = SpectralConv2d_(dim2, dim2, modes1, modes2)
+        self.deconv4_2 = SpectralConv2d_res(dim2, dim2, modes1, modes2)
         self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
         self.deconv5_2 = ConvBlock(dim1, dim1)
         #self.deconv5_2 = FourierConvBlock_Tanh(dim1, dim1, modes1, modes2)
@@ -308,18 +256,18 @@ class UFNONet(nn.Module):
         
         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
         #self.deconv1_2 = ConvBlock(dim5, dim5)
-        #self.deconv1_2 = UFourierConvLayer(dim5, dim5, int(modes1/4), int(modes2/4), input_dim=5)
-        self.deconv1_2 = UFourierConvLayer_Old(dim5, dim5, int(modes1/4), int(modes2/4))
+        self.deconv1_2 = UFourierConvLayer(dim5, dim5, int(modes1/4), int(modes2/4), input_dim=5)
+        #self.deconv1_2 = UFourierConvLayer_Old(dim5, dim5, int(modes1/4), int(modes2/4))
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
-        #self.deconv2_2 = UFourierConvLayer(dim4, dim4, int(modes1/2), int(modes2/2), input_dim=10)
-        self.deconv2_2 = UFourierConvLayer_Old(dim4, dim4, int(modes1/2), int(modes2/2))
+        self.deconv2_2 = SmallUFourierConvLayer(dim4, dim4, int(modes1/2), int(modes2/2), input_dim=10)
+        #self.deconv2_2 = UFourierConvLayer_Old(dim4, dim4, int(modes1/2), int(modes2/2))
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
-        #self.deconv3_2 = UFourierConvLayer(dim3, dim3, modes1, modes2, input_dim=20)
-        self.deconv3_2 = UFourierConvLayer_Old(dim3, dim3, modes1, modes2)
+        self.deconv3_2 = UFourierConvLayer(dim3, dim3, modes1, modes2, input_dim=20)
+        #self.deconv3_2 = UFourierConvLayer_Old(dim3, dim3, modes1, modes2)
         #self.deconv3_2 = ConvBlock(dim3, dim3)
         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
-        #self.deconv4_2 = UFourierConvLayer(dim2, dim2, modes1, modes2, input_dim=40)
-        self.deconv4_2 = UFourierConvLayer_Old(dim2, dim2, modes1, modes2)
+        self.deconv4_2 = LargeUFourierConvLayer(dim2, dim2, modes1, modes2, input_dim=40)
+        #self.deconv4_2 = UFourierConvLayer_Old(dim2, dim2, modes1, modes2)
         #self.deconv4_2 = ConvBlock(dim2, dim2)
         self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
         self.deconv5_2 = ConvBlock(dim1, dim1)
@@ -484,7 +432,6 @@ model_dict = {
     'Discriminator': Discriminator,
     'UPFWI': FCN4_Deep_Resize_2,
     'FNONet': FNONet,
-    'FNONetS': FNONet_Small,
     'UFNONet': UFNONet,
 }
 

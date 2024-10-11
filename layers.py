@@ -6,19 +6,7 @@ from einops import rearrange
 from math import ceil, log2
 from collections import OrderedDict
 
-
 NORM_LAYERS = { 'bn': nn.BatchNorm2d, 'in': nn.InstanceNorm2d, 'ln': nn.LayerNorm }
-
-# Replace the key names in the checkpoint in which legacy network building blocks are used 
-def replace_legacy(old_dict):
-    li = []
-    for k, v in old_dict.items():
-        k = (k.replace('Conv2DwithBN', 'layers')
-              .replace('Conv2DwithBN_Tanh', 'layers')
-              .replace('Deconv2DwithBN', 'layers')
-              .replace('ResizeConv2DwithBN', 'layers'))
-        li.append((k, v))
-    return OrderedDict(li)
 
 ### NETWORK LAYERS ###
 class Conv2DwithBN(nn.Module):
@@ -115,35 +103,6 @@ class ResizeBlock(nn.Module):
         return self.layers(x)
     
 # fourier blocks tests
-
-class PrototypeFourierConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2):
-        super(PrototypeFourierConvLayer, self).__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.modes1 = modes1
-        self.modes2 = modes2
-        self.scale = (1 / (in_channels * out_channels))
-        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
-        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
-
-    def compl_mul2d(self, input, weights):
-        # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
-        return torch.einsum("bixy,ioxy->boxy", input, weights)
-
-    def forward(self, x):
-        batchsize = x.shape[0]
-        # Fourier transform
-        x_ft = torch.fft.rfftn(x, dim=[-2, -1])
-        
-        # Multiply the Fourier modes
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-2), x.size(-1)//2+1, dtype=torch.cfloat, device=x.device)
-        out_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
-        out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
-        
-        # Return to spatial domain
-        x = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
-        return x
 
 class FourierConvLayer(nn.Module):
     def __init__(self, in_channels, out_channels, modes1, modes2):
@@ -257,19 +216,24 @@ class OutConv(nn.Module):
     def forward(self, x):
         return self.conv(x)
     
+#######################################
+    
 class LargeUFourierConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2, bilinear=False):
+    def __init__(self, in_channels, out_channels, modes1, modes2, input_dim, bilinear=False):
         super(LargeUFourierConvLayer, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.modes1 = modes1
-        self.modes2 = modes2
+        self.modes2 = modes2        
+        
         self.scale = (1 / (in_channels * out_channels))
         self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
         self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
         
-        # Caminho 2: Convolução 1x1
-        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        # Caminho 2: Transformada linear
+        self.linear = nn.Linear(in_channels, out_channels)
+        self.act1 = nn.ReLU(inplace=True)
+        self.act2 = nn.ReLU(inplace=True)
         
         # Caminho 3: U-Net
 
@@ -293,6 +257,16 @@ class LargeUFourierConvLayer(nn.Module):
 
     def forward(self, x):
         batchsize = x.shape[0]
+
+        # Caminho 2: transformada linear
+        x = x.permute(0, 2, 3, 1)
+        # x.shape == [batch_size, grid_size, grid_size, in_dim]
+        res = self.linear(x)
+        # res.shape == [batch_size, grid_size, grid_size, out_dim]
+        out2 = res.permute(0, 3, 1, 2)
+
+        x = rearrange(x, 'b m n i -> b i m n')
+        # x.shape == [batch_size, in_dim, grid_size, grid_size]
         
         # Caminho 1: Transformada de Fourier
         x_ft = torch.fft.rfftn(x, dim=[-2, -1])
@@ -303,8 +277,7 @@ class LargeUFourierConvLayer(nn.Module):
         
         out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
         
-        # Caminho 2: Convolução 1x1
-        out2 = self.conv1x1(x)
+    
         
         # Caminho 3: U-Net simplificada maior
 
@@ -329,93 +302,17 @@ class LargeUFourierConvLayer(nn.Module):
         dec = self.up1(enc5, enc4)
         dec = self.up2(dec, enc3)
         dec = self.up3(dec, enc2)
-        dec = self.up4(dec, enc1)
+        dec = self.up4(dec,enc1)
         logits = self.outc(dec)
 
         # Remove o padding
         out3 = logits[..., :original_size[0], :original_size[1]]
     
         # Combinação dos caminhos
-        out = out1 + out2 + out3
+        out = self.act1(out1+out2)
+        out = self.act2(out+out3)
+        #out = out1 + out2 + out3
         
-        return out
-    
-class UFourierConvLayer_Old(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2, bilinear=False):
-        super(UFourierConvLayer_Old, self).__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.modes1 = modes1
-        self.modes2 = modes2
-        self.scale = (1 / (in_channels * out_channels))
-        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
-        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
-        
-        # Caminho 2: Convolução 1x1
-        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        
-        # Caminho 3: U-Net
-
-        self.bilinear = bilinear
-
-        self.inc = (DoubleConv(in_channels, 64))
-        self.down1 = (Down(64, 128))
-        self.down2 = (Down(128, 256))
-        factor = 2 if bilinear else 1
-        self.down3 = (Down(256, 512 // factor))
-        self.up1 = (Up(512, 256 // factor, bilinear))
-        self.up2 = (Up(256, 128 // factor, bilinear))
-        self.up3 = (Up(128, 64, bilinear))
-        self.outc = (OutConv(64, out_channels))
-
-    def compl_mul2d(self, input, weights):
-        # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
-        return torch.einsum("bixy,ioxy->boxy", input, weights)
-
-    def forward(self, x):
-        batchsize = x.shape[0]
-        
-        # Caminho 1: Transformada de Fourier
-        x_ft = torch.fft.rfftn(x, dim=[-2, -1])
-        
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-2), x.size(-1)//2+1, dtype=torch.cfloat, device=x.device)
-        out_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
-        out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
-        
-        out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
-        
-        # Caminho 2: Convolução 1x1
-        out2 = self.conv1x1(x)
-        
-        # Caminho 3: U-Net simplificada maior
-
-        # Calcula o padding necessário para alcançar a próxima potência de 2
-        original_size = x.shape[-2:]
-        target_size = [2**ceil(log2(s)) for s in original_size]
-        padding = [
-            0,  # Sem padding à esquerda
-            target_size[1] - original_size[1],  # Todo o padding à direita
-            0,  # Sem padding em cima
-            target_size[0] - original_size[0]   # Todo o padding em baixo
-        ]
-
-        # Aplica o padding unilateral (somente nas extremidades finais)
-        x_padded = F.pad(x, padding, mode='constant', value=0)
-
-        enc1 = self.inc(x_padded)
-        enc2 = self.down1(enc1)
-        enc3 = self.down2(enc2)
-        enc4 = self.down3(enc3)
-        dec = self.up1(enc4, enc3)
-        dec = self.up2(dec, enc2)
-        dec = self.up3(dec, enc1)
-        logits = self.outc(dec)
-
-        # Remove o padding
-        out3 = logits[..., :original_size[0], :original_size[1]]
-    
-        # Combinação dos caminhos
-        out = out1 + out2 + out3
         
         return out
     
@@ -425,13 +322,16 @@ class UFourierConvLayer(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.modes1 = modes1
-        self.modes2 = modes2
+        self.modes2 = modes2        
+        
         self.scale = (1 / (in_channels * out_channels))
         self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
         self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
         
-        # Caminho 2: Convolução 1x1
-        self.fc = nn.Linear(in_channels * (input_dim**2), out_channels * (input_dim**2))
+        # Caminho 2: Transformada linear
+        self.linear = nn.Linear(in_channels, out_channels)
+        self.act1 = nn.ReLU(inplace=True)
+        self.act2 = nn.ReLU(inplace=True)
         
         # Caminho 3: U-Net
 
@@ -453,6 +353,16 @@ class UFourierConvLayer(nn.Module):
 
     def forward(self, x):
         batchsize = x.shape[0]
+
+        # Caminho 2: transformada linear
+        x = x.permute(0, 2, 3, 1)
+        # x.shape == [batch_size, grid_size, grid_size, in_dim]
+        res = self.linear(x)
+        # res.shape == [batch_size, grid_size, grid_size, out_dim]
+        out2 = res.permute(0, 3, 1, 2)
+
+        x = rearrange(x, 'b m n i -> b i m n')
+        # x.shape == [batch_size, in_dim, grid_size, grid_size]
         
         # Caminho 1: Transformada de Fourier
         x_ft = torch.fft.rfftn(x, dim=[-2, -1])
@@ -463,13 +373,7 @@ class UFourierConvLayer(nn.Module):
         
         out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
         
-        # Caminho 2: Camada Linear
-        # Achata a entrada para (batch_size, in_channels * altura * largura)
-        x_flat = x.view(batchsize, -1)
-        out2 = self.fc(x_flat)
-        
-        # Restaurar a forma original para (batch_size, out_channels, altura, largura)
-        out2 = out2.view(batchsize, self.out_channels, x.size(-2), x.size(-1))
+    
         
         # Caminho 3: U-Net simplificada maior
 
@@ -499,7 +403,10 @@ class UFourierConvLayer(nn.Module):
         out3 = logits[..., :original_size[0], :original_size[1]]
     
         # Combinação dos caminhos
-        out = out1 + out2 + out3
+        out = self.act1(out1+out2)
+        out = self.act2(out+out3)
+        #out = out1 + out2 + out3
+        
         
         return out
     
@@ -509,13 +416,16 @@ class SmallUFourierConvLayer(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.modes1 = modes1
-        self.modes2 = modes2
+        self.modes2 = modes2        
+        
         self.scale = (1 / (in_channels * out_channels))
         self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
         self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
         
-        # Caminho 2: Convolução 1x1
-        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        # Caminho 2: Transformada linear
+        self.linear = nn.Linear(in_channels, out_channels)
+        self.act1 = nn.ReLU(inplace=True)
+        self.act2 = nn.ReLU(inplace=True)
         
         # Caminho 3: U-Net
 
@@ -535,6 +445,16 @@ class SmallUFourierConvLayer(nn.Module):
 
     def forward(self, x):
         batchsize = x.shape[0]
+
+        # Caminho 2: transformada linear
+        x = x.permute(0, 2, 3, 1)
+        # x.shape == [batch_size, grid_size, grid_size, in_dim]
+        res = self.linear(x)
+        # res.shape == [batch_size, grid_size, grid_size, out_dim]
+        out2 = res.permute(0, 3, 1, 2)
+
+        x = rearrange(x, 'b m n i -> b i m n')
+        # x.shape == [batch_size, in_dim, grid_size, grid_size]
         
         # Caminho 1: Transformada de Fourier
         x_ft = torch.fft.rfftn(x, dim=[-2, -1])
@@ -545,8 +465,7 @@ class SmallUFourierConvLayer(nn.Module):
         
         out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
         
-        # Caminho 2: Convolução 1x1
-        out2 = self.conv1x1(x)
+    
         
         # Caminho 3: U-Net simplificada maior
 
@@ -574,210 +493,101 @@ class SmallUFourierConvLayer(nn.Module):
         out3 = logits[..., :original_size[0], :original_size[1]]
     
         # Combinação dos caminhos
-        out = out1 + out2 + out3
+        out = self.act1(out1+out2)
+        out = self.act2(out+out3)
+        #out = out1 + out2 + out3
+        
         
         return out
-
-class FourierConvBlock_Tanh(nn.Module):
-    def __init__(self, in_fea, out_fea, modes1, modes2, norm='bn'):
-        super(FourierConvBlock_Tanh, self).__init__()
-        layers = [FourierConvLayer(in_fea, out_fea, modes1, modes2)]
-        if norm in NORM_LAYERS:
-            layers.append(NORM_LAYERS[norm](out_fea))
-        layers.append(nn.Tanh())
-        self.layers = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.layers(x)
-
-class FourierDeconvBlock(nn.Module):
-    def __init__(self, in_fea, out_fea, modes1, modes2, norm='bn'):
-        super(FourierDeconvBlock, self).__init__()
-        layers = [FourierConvLayer(in_fea, out_fea, modes1, modes2)]
-        if norm in NORM_LAYERS:
-            layers.append(NORM_LAYERS[norm](out_fea))
-        layers.append(nn.LeakyReLU(0.2, inplace=True))
-        self.layers = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.layers(x)
     
-class FactorizedSpectralConv2d(nn.Module):
-    def __init__(self, in_dim, out_dim, n_modes, resdiual=True, dropout=0.0):
-        super(FactorizedSpectralConv2d, self).__init__()
-        self.in_dim = in_dim
-        self.out_dim = out_dim
-        self.n_modes = n_modes
-        self.linear = nn.Linear(in_dim, out_dim)
-        self.residual = resdiual
-        self.act = nn.ReLU(inplace=True)
-
-        fourier_weight = [nn.Parameter(torch.FloatTensor(
-            in_dim, out_dim, n_modes, n_modes, 2)) for _ in range(2)]
-        self.fourier_weight = nn.ParameterList(fourier_weight)
-        for param in self.fourier_weight:
-            nn.init.xavier_normal_(param, gain=1/(in_dim*out_dim))
-
-    @staticmethod
-    def complex_matmul_2d(a, b):
-        # (batch, in_channel, x, y), (in_channel, out_channel, x, y) -> (batch, out_channel, x, y)
-        breakpoint()
-        op = partial(torch.einsum, "bixy,ioxy->boxy")
-        return torch.stack([
-            op(a[..., 0], b[..., 0]) - op(a[..., 1], b[..., 1]),
-            op(a[..., 1], b[..., 0]) + op(a[..., 0], b[..., 1])
-        ], dim=-1)
-
-    def forward(self, x):
-        x = x.permute(0, 2, 3, 1)
-        # x.shape == [batch_size, grid_size, grid_size, in_dim]
-        B, M, N, I = x.shape
-        O = self.out_dim
-        res = self.linear(x)
-        # res.shape == [batch_size, grid_size, grid_size, out_dim]
-
-        x = rearrange(x, 'b m n i -> b i m n')
-        # x.shape == [batch_size, in_dim, grid_size, grid_size]
-
-        x_ft = torch.fft.rfft2(x, s=(M, N), norm='ortho')
-        # x_ft.shape == [batch_size, in_dim, grid_size, grid_size // 2 + 1]
-
-        x_ft = torch.stack([x_ft.real, x_ft.imag], dim=4)
-        # x_ft.shape == [batch_size, in_dim, grid_size, grid_size // 2 + 1, 2]
-
-        out_ft = torch.zeros(B, O, N, M // 2 + 1, 2, device=x.device)
-        # out_ft.shape == [batch_size, in_dim, grid_size, grid_size // 2 + 1, 2]
-
-        breakpoint()
-        out_ft[:, :, :self.n_modes, :self.n_modes] = self.complex_matmul_2d(
-            x_ft[:, :, :self.n_modes, :self.n_modes], self.fourier_weight[0])
-
-        out_ft[:, :, -self.n_modes:, :self.n_modes] = self.complex_matmul_2d(
-            x_ft[:, :, -self.n_modes:, :self.n_modes], self.fourier_weight[1])
-
-        out_ft = torch.complex(out_ft[..., 0], out_ft[..., 1])
-
-        x = torch.fft.irfft2(out_ft, s=(N, M), norm='ortho')
-        # x.shape == [batch_size, in_dim, grid_size, grid_size]
-
-        x = rearrange(x, 'b i m n -> b m n i')
-        # x.shape == [batch_size, grid_size, grid_size, out_dim]
-
-        if self.residual:
-            x = self.act(x + res)
-
-        #x = x.transpose(0, 2, 3, 1)
-        x = x.permute(0, 3, 1, 2)
-        return x
-    
-    def forward_film_simple(self, x, gamma, beta):
-        
-        # x.shape == [batch_size, grid_size, grid_size, in_dim]
-        B, M, N, I = x.shape
-        O = self.out_dim
-        res = self.linear(x)
-        # res.shape == [batch_size, grid_size, grid_size, out_dim]
-
-        x = rearrange(x, 'b m n i -> b i m n')
-        # x.shape == [batch_size, in_dim, grid_size, grid_size]
-
-        x_ft = torch.fft.rfft2(x, s=(M, N), norm='ortho')
-        # x_ft.shape == [batch_size, in_dim, grid_size, grid_size // 2 + 1]
-
-        x_ft = torch.stack([x_ft.real, x_ft.imag], dim=4)
-        # x_ft.shape == [batch_size, in_dim, grid_size, grid_size // 2 + 1, 2]
-
-        out_ft = torch.zeros(B, O, N, M // 2 + 1, 2, device=x.device)
-        # out_ft.shape == [batch_size, in_dim, grid_size, grid_size // 2 + 1, 2]
-
-        out_ft[:, :, :self.n_modes, :self.n_modes] = self.complex_matmul_2d(
-            x_ft[:, :, :self.n_modes, :self.n_modes], self.fourier_weight[0])
-
-        out_ft[:, :, -self.n_modes:, :self.n_modes] = self.complex_matmul_2d(
-            x_ft[:, :, -self.n_modes:, :self.n_modes], self.fourier_weight[1])
-
-        out_ft = torch.complex(out_ft[..., 0], out_ft[..., 1])
-
-        x = torch.fft.irfft2(out_ft, s=(N, M), norm='ortho')
-        # x.shape == [batch_size, in_dim, grid_size, grid_size]
-
-        x = rearrange(x, 'b i m n -> b m n i')
-        # x.shape == [batch_size, grid_size, grid_size, out_dim]
-
-        if self.residual:
-            
-            x = x + res
-            
-            beta = beta.unsqueeze(1).unsqueeze(1).unsqueeze(1)
-            gamma = gamma.unsqueeze(1).unsqueeze(1).unsqueeze(1)
-            
-            x = self.act(gamma*x + beta)
-            
-        return x
-    
-
-class SpectralConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, n_modes, resdiual=True, dropout=0.0):
-        super(SpectralConv2d, self).__init__()
-
-        """
-        2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
-        """
-
+class UFourierConvLayer_conv1x1(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2, bilinear=False):
+        super(UFourierConvLayer_conv1x1, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.n_modes = n_modes
-        self.linear = nn.Linear(in_channels, out_channels)
-        self.residual = resdiual
-        self.act = nn.ReLU(inplace=True)
-
+        self.modes1 = modes1
+        self.modes2 = modes2
         self.scale = (1 / (in_channels * out_channels))
-        fourier_weight = [nn.Parameter(torch.FloatTensor(
-            in_channels, out_channels, n_modes, n_modes, 2)) for _ in range(2)]
-        self.fourier_weight = nn.ParameterList(fourier_weight)
-        for param in self.fourier_weight:
-            nn.init.xavier_normal_(param, gain=1/(in_channels*out_channels))
-    # Complex multiplication
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
+        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
+
+        # Camadas de ativação para FILM
+        self.act1 = nn.ReLU(inplace=True)
+        self.act2 = nn.ReLU(inplace=True)
+        
+        # Caminho 2: Convolução 1x1
+        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        
+        
+        # Caminho 3: U-Net
+
+        self.bilinear = bilinear
+
+        self.inc = (DoubleConv(in_channels, 64))
+        self.down1 = (Down(64, 128))
+        self.down2 = (Down(128, 256))
+        factor = 2 if bilinear else 1
+        self.down3 = (Down(256, 512 // factor))
+        self.up1 = (Up(512, 256 // factor, bilinear))
+        self.up2 = (Up(256, 128 // factor, bilinear))
+        self.up3 = (Up(128, 64, bilinear))
+        self.outc = (OutConv(64, out_channels))
+
     def compl_mul2d(self, input, weights):
-        # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
     def forward(self, x):
-        x = x.permute(0, 2, 3, 1)
-        # x.shape == [batch_size, grid_size, grid_size, in_dim]
-        res = self.linear(x)
-        # res.shape == [batch_size, grid_size, grid_size, out_dim]
-
-        x = rearrange(x, 'b m n i -> b i m n')
-        # x.shape == [batch_size, in_dim, grid_size, grid_size]
         batchsize = x.shape[0]
-        #Compute Fourier coeffcients up to factor of e^(- something constant)
-        x_ft = torch.fft.rfft2(x)
+        
+        # Caminho 1: Transformada de Fourier
+        x_ft = torch.fft.rfftn(x, dim=[-2, -1])
+        
+        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-2), x.size(-1)//2+1, dtype=torch.cfloat, device=x.device)
+        out_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+        out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
+        
+        out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
+        
+        # Caminho 2: Convolução 1x1
+        out2 = self.conv1x1(x)
+        
+        # Caminho 3: U-Net simplificada maior
 
-        # Multiply relevant Fourier modes
-        out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
-        out_ft[:, :, :self.n_modes, :self.n_modes] = \
-            self.compl_mul2d(x_ft[:, :, :self.n_modes, :self.n_modes], self.fourier_weight[0])
-        out_ft[:, :, -self.n_modes:, :self.n_modes] = \
-            self.compl_mul2d(x_ft[:, :, -self.n_modes:, :self.n_modes], self.fourier_weight[1])
+        # Calcula o padding necessário para alcançar a próxima potência de 2
+        original_size = x.shape[-2:]
+        target_size = [2**ceil(log2(s)) for s in original_size]
+        padding = [
+            0,  # Sem padding à esquerda
+            target_size[1] - original_size[1],  # Todo o padding à direita
+            0,  # Sem padding em cima
+            target_size[0] - original_size[0]   # Todo o padding em baixo
+        ]
 
-        #Return to physical space
-        x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
+        # Aplica o padding unilateral (somente nas extremidades finais)
+        x_padded = F.pad(x, padding, mode='constant', value=0)
 
-        x = rearrange(x, 'b i m n -> b m n i')
-        # x.shape == [batch_size, grid_size, grid_size, out_dim]
+        enc1 = self.inc(x_padded)
+        enc2 = self.down1(enc1)
+        enc3 = self.down2(enc2)
+        enc4 = self.down3(enc3)
+        dec = self.up1(enc4, enc3)
+        dec = self.up2(dec, enc2)
+        dec = self.up3(dec, enc1)
+        logits = self.outc(dec)
 
-        if self.residual:
-            x = self.act(x + res)
-
-        #x = x.transpose(0, 2, 3, 1)
-        x = x.permute(0, 3, 1, 2)
-
-        return x
+        # Remove o padding
+        out3 = logits[..., :original_size[0], :original_size[1]]
     
-class SpectralConv2d_(nn.Module):
+        # Combinação dos caminhos
+        out = self.act1(out1+out2)
+        out = self.act2(out+out3)
+        
+        return out
+    
+class SpectralConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, modes1, modes2):
-        super(SpectralConv2d_, self).__init__()
+        super(SpectralConv2d, self).__init__()
 
         """
         2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
@@ -812,4 +622,142 @@ class SpectralConv2d_(nn.Module):
         #Return to physical space
         x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
         return x
+    
+class SpectralConv2d_res(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super(SpectralConv2d_res, self).__init__()
 
+        """
+        2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        """
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1 #Number of Fourier modes to multiply, at most floor(N/2) + 1
+        self.modes2 = modes2
+        self.linear = nn.Linear(in_channels, out_channels)
+        self.act = nn.ReLU(inplace=True)
+
+        self.scale = (1 / (in_channels * out_channels))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+
+    # Complex multiplication
+    def compl_mul2d(self, input, weights):
+        # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        return torch.einsum("bixy,ioxy->boxy", input, weights)
+
+    def forward(self, x):
+
+        x = x.permute(0, 2, 3, 1)
+        # x.shape == [batch_size, grid_size, grid_size, in_dim]
+        res = self.linear(x)
+        # res.shape == [batch_size, grid_size, grid_size, out_dim]
+
+        x = rearrange(x, 'b m n i -> b i m n')
+        # x.shape == [batch_size, in_dim, grid_size, grid_size]
+
+
+        batchsize = x.shape[0]
+        #Compute Fourier coeffcients up to factor of e^(- something constant)
+        x_ft = torch.fft.rfft2(x)
+
+
+        # Multiply relevant Fourier modes
+        out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
+        out_ft[:, :, :self.modes1, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+        out_ft[:, :, -self.modes1:, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
+
+        #Return to physical space
+        x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
+
+        x = rearrange(x, 'b i m n -> b m n i')
+        x = self.act(x + res)
+        x = x.permute(0, 3, 1, 2)
+
+        return x
+
+# class FourierConvBlock_Tanh(nn.Module):
+#     def __init__(self, in_fea, out_fea, modes1, modes2, norm='bn'):
+#         super(FourierConvBlock_Tanh, self).__init__()
+#         layers = [FourierConvLayer(in_fea, out_fea, modes1, modes2)]
+#         if norm in NORM_LAYERS:
+#             layers.append(NORM_LAYERS[norm](out_fea))
+#         layers.append(nn.Tanh())
+#         self.layers = nn.Sequential(*layers)
+
+#     def forward(self, x):
+#         return self.layers(x)
+
+# class FourierDeconvBlock(nn.Module):
+#     def __init__(self, in_fea, out_fea, modes1, modes2, norm='bn'):
+#         super(FourierDeconvBlock, self).__init__()
+#         layers = [FourierConvLayer(in_fea, out_fea, modes1, modes2)]
+#         if norm in NORM_LAYERS:
+#             layers.append(NORM_LAYERS[norm](out_fea))
+#         layers.append(nn.LeakyReLU(0.2, inplace=True))
+#         self.layers = nn.Sequential(*layers)
+
+#     def forward(self, x):
+#         return self.layers(x)
+
+# class SpectralConv2d(nn.Module):
+#     def __init__(self, in_channels, out_channels, n_modes, resdiual=True, dropout=0.0):
+#         super(SpectralConv2d, self).__init__()
+
+#         """
+#         2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+#         """
+
+#         self.in_channels = in_channels
+#         self.out_channels = out_channels
+#         self.n_modes = n_modes
+#         self.linear = nn.Linear(in_channels, out_channels)
+#         self.residual = resdiual
+#         self.act = nn.ReLU(inplace=True)
+
+#         self.scale = (1 / (in_channels * out_channels))
+#         fourier_weight = [nn.Parameter(torch.FloatTensor(
+#             in_channels, out_channels, n_modes, n_modes, 2)) for _ in range(2)]
+#         self.fourier_weight = nn.ParameterList(fourier_weight)
+#         for param in self.fourier_weight:
+#             nn.init.xavier_normal_(param, gain=1/(in_channels*out_channels))
+#     # Complex multiplication
+#     def compl_mul2d(self, input, weights):
+#         # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+#         return torch.einsum("bixy,ioxy->boxy", input, weights)
+
+#     def forward(self, x):
+#         x = x.permute(0, 2, 3, 1)
+#         # x.shape == [batch_size, grid_size, grid_size, in_dim]
+#         res = self.linear(x)
+#         # res.shape == [batch_size, grid_size, grid_size, out_dim]
+
+#         x = rearrange(x, 'b m n i -> b i m n')
+#         # x.shape == [batch_size, in_dim, grid_size, grid_size]
+#         batchsize = x.shape[0]
+#         #Compute Fourier coeffcients up to factor of e^(- something constant)
+#         x_ft = torch.fft.rfft2(x)
+
+#         # Multiply relevant Fourier modes
+#         out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
+#         out_ft[:, :, :self.n_modes, :self.n_modes] = \
+#             self.compl_mul2d(x_ft[:, :, :self.n_modes, :self.n_modes], self.fourier_weight[0])
+#         out_ft[:, :, -self.n_modes:, :self.n_modes] = \
+#             self.compl_mul2d(x_ft[:, :, -self.n_modes:, :self.n_modes], self.fourier_weight[1])
+
+#         #Return to physical space
+#         x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
+
+#         x = rearrange(x, 'b i m n -> b m n i')
+#         # x.shape == [batch_size, grid_size, grid_size, out_dim]
+
+#         if self.residual:
+#             x = self.act(x + res)
+
+#         #x = x.transpose(0, 2, 3, 1)
+#         x = x.permute(0, 3, 1, 2)
+
+#         return x
