@@ -218,8 +218,8 @@ def main(args):
 
     # Scale lr according to effective batch size
     lr = args.lr * args.world_size
-    #optimizer = torch.optim.AdamW(model.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=args.weight_decay)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=args.weight_decay)
+    #optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=args.weight_decay)
 
     # Convert scheduler to be per iteration instead of per epoch
     warmup_iters = args.lr_warmup_epochs * len(dataloader_train)
