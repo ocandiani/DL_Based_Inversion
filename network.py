@@ -246,7 +246,7 @@ class UFNONet(nn.Module):
         self.convblock8 = ConvBlock(dim4, dim5, kernel_size=(8, ceil(70 * sample_spatial / 8)), padding=0)
         
         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
-        self.deconv1_2 = LargeUFourierConvLayer(dim5, dim5, min(modes1,3), min(modes2,3))
+        self.deconv1_2 = SmallUFourierConvLayer(dim5, dim5, min(modes1,3), min(modes2,3))
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
         self.deconv2_2 = UFourierConvLayer(dim4, dim4, min(modes1,6), min(modes2,6))
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)

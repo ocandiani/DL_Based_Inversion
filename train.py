@@ -261,8 +261,9 @@ def main(args):
         step = checkpoint['step']
         lr_scheduler.milestones=lr_milestones
 
+    print("Model size:")
     mem_allocated = torch.cuda.memory_allocated(0) / 1024**2
-    print(f"Memória alocada: {mem_allocated:.2f} MB")
+    print(f"Allocated memory: {mem_allocated:.2f} MB")
     print(f"Model param number: {sum(p.numel() for p in model.parameters())}")
     print('Start training')
     start_time = time.time()

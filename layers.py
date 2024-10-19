@@ -685,6 +685,7 @@ PRIMITIVES = [
     'spectral_conv2d_res',
     'conv_block',
     'double_conv',
+    'large_u_fourier',
     'u_fourier',
     'small_u_fourier',
 ]
@@ -704,10 +705,12 @@ class MixedOp(nn.Module):
                 op = ConvBlock(C_in, C_out)
             elif primitive == 'double_conv':
                 op = DoubleConv(C_in,C_out)
+            elif primitive == 'large_u_fourier':
+                op = LargeUFourierConvLayer(C_in, C_out, modes1, modes2)
             elif primitive == 'u_fourier':
-                op == UFourierConvLayer(C_in, C_out, modes1, modes2)
+                op = UFourierConvLayer(C_in, C_out, modes1, modes2)
             elif primitive == 'small_u_fourier':
-                op == SmallUFourierConvLayer(C_in, C_out, modes1, modes2)
+                op = SmallUFourierConvLayer(C_in, C_out, modes1, modes2)
             self._ops.append(op)
 
     def forward(self, x, weights):
