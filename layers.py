@@ -281,9 +281,9 @@ class LargeUFourierConvLayer(nn.Module):
         
         # Caminho 3: U-Net simplificada maior
 
-        # Calcula o padding necessário para alcançar a próxima potência de 2
+        # Calcula o padding necessário para alcançar a próxima potência de 2 (min: [16,16])
         original_size = x.shape[-2:]
-        target_size = [2**ceil(log2(s)) for s in original_size]
+        target_size = [max(2**ceil(log2(s)),16) for s in original_size]
         padding = [
             0,  # Sem padding à esquerda
             target_size[1] - original_size[1],  # Todo o padding à direita
@@ -377,9 +377,9 @@ class UFourierConvLayer(nn.Module):
         
         # Caminho 3: U-Net simplificada maior
 
-        # Calcula o padding necessário para alcançar a próxima potência de 2
+        # Calcula o padding necessário para alcançar a próxima potência de 2 (min: [8,8])
         original_size = x.shape[-2:]
-        target_size = [2**ceil(log2(s)) for s in original_size]
+        target_size = [max(2**ceil(log2(s)),8) for s in original_size]
         padding = [
             0,  # Sem padding à esquerda
             target_size[1] - original_size[1],  # Todo o padding à direita
@@ -469,9 +469,9 @@ class SmallUFourierConvLayer(nn.Module):
         
         # Caminho 3: U-Net simplificada maior
 
-        # Calcula o padding necessário para alcançar a próxima potência de 2
+        # Calcula o padding necessário para alcançar a próxima potência de 2 (min: [4,4])
         original_size = x.shape[-2:]
-        target_size = [2**ceil(log2(s)) for s in original_size]
+        target_size = [max(2**ceil(log2(s)),4) for s in original_size]
         padding = [
             0,  # Sem padding à esquerda
             target_size[1] - original_size[1],  # Todo o padding à direita
@@ -554,9 +554,9 @@ class UFourierConvLayer_conv1x1(nn.Module):
         
         # Caminho 3: U-Net simplificada maior
 
-        # Calcula o padding necessário para alcançar a próxima potência de 2
+        # Calcula o padding necessário para alcançar a próxima potência de 2 (min: [8,8])
         original_size = x.shape[-2:]
-        target_size = [2**ceil(log2(s)) for s in original_size]
+        target_size = [max(2**ceil(log2(s)),8) for s in original_size]
         padding = [
             0,  # Sem padding à esquerda
             target_size[1] - original_size[1],  # Todo o padding à direita

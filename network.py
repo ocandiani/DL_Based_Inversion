@@ -166,7 +166,7 @@ class InversionNet(nn.Module):
         return x
 
 class FNONet(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, **kwargs):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
         super(FNONet, self).__init__()
         self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
         self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
@@ -184,15 +184,15 @@ class FNONet(nn.Module):
         self.convblock8 = ConvBlock(dim4, dim5, kernel_size=(8, ceil(70 * sample_spatial / 8)), padding=0)
 
         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
-        self.deconv1_2 = SpectralConv2d_res(dim5, dim5, int(modes1/4), int(modes2/4))
+        self.deconv1_2 = SpectralConv2d_res(dim5, dim5, min(modes1,3), min(modes2,3))
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
-        self.deconv2_2 = SpectralConv2d_res(dim4, dim4, int(modes1/2), int(modes2/2))
+        self.deconv2_2 = SpectralConv2d_res(dim4, dim4, min(modes1,6), min(modes2,6))
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
-        self.deconv3_2 = SpectralConv2d_res(dim3, dim3, modes1, modes2)
+        self.deconv3_2 = SpectralConv2d_res(dim3, dim3, min(modes1,11), min(modes2,11))
         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
-        self.deconv4_2 = SpectralConv2d_res(dim2, dim2, modes1, modes2)
+        self.deconv4_2 = SpectralConv2d_res(dim2, dim2, min(modes1,21), min(modes2,21))
         self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
-        self.deconv5_2 = ConvBlock(dim1, dim1)
+        self.deconv5_2 = SpectralConv2d_res(dim1, dim1, min(modes1,41), min(modes2,41))
         self.deconv6 = ConvBlock_Tanh(dim1, 1)
         
     def forward(self,x):
@@ -228,7 +228,7 @@ class FNONet(nn.Module):
         return x
     
 class UFNONet(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, **kwargs):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
         super(UFNONet, self).__init__()
         self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
         self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
@@ -246,15 +246,15 @@ class UFNONet(nn.Module):
         self.convblock8 = ConvBlock(dim4, dim5, kernel_size=(8, ceil(70 * sample_spatial / 8)), padding=0)
         
         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
-        self.deconv1_2 = SmallUFourierConvLayer(dim5, dim5, int(modes1/4), int(modes2/4))
+        self.deconv1_2 = LargeUFourierConvLayer(dim5, dim5, min(modes1,3), min(modes2,3))
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
-        self.deconv2_2 = UFourierConvLayer(dim4, dim4, int(modes1/2), int(modes2/2))
+        self.deconv2_2 = UFourierConvLayer(dim4, dim4, min(modes1,6), min(modes2,6))
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
-        self.deconv3_2 = UFourierConvLayer(dim3, dim3, modes1, modes2)
+        self.deconv3_2 = UFourierConvLayer(dim3, dim3, min(modes1,11), min(modes2,11))
         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
-        self.deconv4_2 = LargeUFourierConvLayer(dim2, dim2, modes1, modes2)
+        self.deconv4_2 = LargeUFourierConvLayer(dim2, dim2, min(modes1,21), min(modes2,21))
         self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
-        self.deconv5_2 = ConvBlock(dim1, dim1)
+        self.deconv5_2 = LargeUFourierConvLayer(dim1, dim1, min(modes1,41), min(modes2,41))
         self.deconv6 = ConvBlock_Tanh(dim1, 1)
         
     def forward(self,x):
@@ -290,7 +290,7 @@ class UFNONet(nn.Module):
         return x
 
 class DARTSNet(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, steps=4, **kwargs):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, steps=4, **kwargs):
         super(DARTSNet, self).__init__()
         
         # Encoder Part (fixed)
@@ -313,15 +313,15 @@ class DARTSNet(nn.Module):
         
         # Decoder Part (with DARTS search for specific blocks)
         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
-        self.deconv1_2 = DARTSBlock(dim5, dim5, modes1=int(modes1/4), modes2=int(modes2/4), steps=steps)
+        self.deconv1_2 = DARTSBlock(dim5, dim5, modes1=min(modes1,3), modes2=min(modes2,3), steps=steps)
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
-        self.deconv2_2 = DARTSBlock(dim4, dim4, modes1=int(modes1/2), modes2=int(modes2/2), steps=steps)
+        self.deconv2_2 = DARTSBlock(dim4, dim4, modes1=min(modes1,6), modes2=min(modes2,6), steps=steps)
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
-        self.deconv3_2 = DARTSBlock(dim3, dim3, modes1=modes1, modes2=modes2, steps=steps)
+        self.deconv3_2 = DARTSBlock(dim3, dim3, modes1=min(modes1,11), modes2=min(modes2,11), steps=steps)
         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
-        self.deconv4_2 = DARTSBlock(dim2, dim2, modes1=modes1, modes2=modes2, steps=steps)
+        self.deconv4_2 = DARTSBlock(dim2, dim2, modes1=min(modes1,21), modes2=min(modes2,21), steps=steps)
         self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
-        self.deconv5_2 = DARTSBlock(dim1, dim1, modes1=modes1, modes2=modes2, steps=steps)
+        self.deconv5_2 = DARTSBlock(dim1, dim1, modes1=min(modes1,41), modes2=min(modes2,41), steps=steps)
         self.deconv6 = ConvBlock_Tanh(dim1, 1)
         
     def forward(self, x):
@@ -348,7 +348,7 @@ class DARTSNet(nn.Module):
 ##### remove before finishing project #####
 
 # class UFNONet_legacy(nn.Module):
-#     def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, **kwargs):
+#     def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
 #         super(UFNONet_legacy, self).__init__()
 #         self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
 #         self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
@@ -366,11 +366,11 @@ class DARTSNet(nn.Module):
 #         self.convblock8 = ConvBlock(dim4, dim5, kernel_size=(8, ceil(70 * sample_spatial / 8)), padding=0)
         
 #         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
-#         self.deconv1_2 = UFourierConvLayer(dim5, dim5, int(modes1/4), int(modes2/4))
+#         self.deconv1_2 = UFourierConvLayer(dim5, dim5, min(modes1,3), min(modes2,3))
 #         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
-#         self.deconv2_2 = SmallUFourierConvLayer(dim4, dim4, int(modes1/2), int(modes2/2))
+#         self.deconv2_2 = SmallUFourierConvLayer(dim4, dim4, min(modes1,6), min(modes2,6))
 #         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
-#         self.deconv3_2 = UFourierConvLayer(dim3, dim3, modes1, modes2)
+#         self.deconv3_2 = UFourierConvLayer(dim3, dim3, min(modes1,11), min(modes2,11))
 #         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
 #         self.deconv4_2 = LargeUFourierConvLayer(dim2, dim2, modes1, modes2)
 #         self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
