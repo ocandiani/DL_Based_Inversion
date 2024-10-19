@@ -104,44 +104,44 @@ class ResizeBlock(nn.Module):
     
 # fourier blocks tests
 
-class FourierConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2):
-        super(FourierConvLayer, self).__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.modes1 = modes1
-        self.modes2 = modes2
-        self.scale = (1 / (in_channels * out_channels))
-        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
-        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
+# class FourierConvLayer(nn.Module):
+#     def __init__(self, in_channels, out_channels, modes1, modes2):
+#         super(FourierConvLayer, self).__init__()
+#         self.in_channels = in_channels
+#         self.out_channels = out_channels
+#         self.modes1 = modes1
+#         self.modes2 = modes2
+#         self.scale = (1 / (in_channels * out_channels))
+#         self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
+#         self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat))
         
-        # Adicionando a convolução 1x1 - polarizer
-        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+#         # Adicionando a convolução 1x1 - polarizer
+#         self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
 
-    def compl_mul2d(self, input, weights):
-        # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
-        return torch.einsum("bixy,ioxy->boxy", input, weights)
+#     def compl_mul2d(self, input, weights):
+#         # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
+#         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
-    def forward(self, x):
-        batchsize = x.shape[0]
+#     def forward(self, x):
+#         batchsize = x.shape[0]
         
-        # Caminho 1: Transformada de Fourier
-        x_ft = torch.fft.rfftn(x, dim=[-2, -1])
+#         # Caminho 1: Transformada de Fourier
+#         x_ft = torch.fft.rfftn(x, dim=[-2, -1])
         
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-2), x.size(-1)//2+1, dtype=torch.cfloat, device=x.device)
-        out_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
-        out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
+#         out_ft = torch.zeros(batchsize, self.out_channels, x.size(-2), x.size(-1)//2+1, dtype=torch.cfloat, device=x.device)
+#         out_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+#         out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
         
-        # Retornando ao domínio espacial
-        out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
+#         # Retornando ao domínio espacial
+#         out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
         
-        # Caminho 2: Convolução 1x1
-        out2 = self.conv1x1(x)
+#         # Caminho 2: Convolução 1x1
+#         out2 = self.conv1x1(x)
         
-        # Somando os dois caminhos
-        out = out1 + out2
+#         # Somando os dois caminhos
+#         out = out1 + out2
         
-        return out
+#         return out
 
 
 #### UNET BLOCKS ####
@@ -255,6 +255,27 @@ class LargeUFourierConvLayer(nn.Module):
         # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
+    def add_padding(self, x, min_size):
+        original_size = x.shape[-2:]
+        target_size = [max(2**ceil(log2(s)), min_size) for s in original_size]
+        
+        padding = []
+        for orig, target in zip(original_size, target_size):
+            pad_total = target - orig
+            pad_start = 1  # Sempre adiciona 1 de padding no início
+            pad_end = pad_total - pad_start
+            padding.extend([pad_start, pad_end])
+        
+        #  ta como [top, bottom, left, right]
+        # left, right, top and bottom on F.pad documentation
+        padding = [padding[2], padding[3], padding[0], padding[1]]
+        padded_x = F.pad(x, padding)
+        return padded_x, original_size
+
+    def remove_padding(self, padded_x, original_size):
+        # Removemos o padding começando da posição (1,1)
+        return padded_x[..., 1:1+original_size[0], 1:1+original_size[1]]
+
     def forward(self, x):
         batchsize = x.shape[0]
 
@@ -280,19 +301,11 @@ class LargeUFourierConvLayer(nn.Module):
     
         
         # Caminho 3: U-Net simplificada maior
-
         # Calcula o padding necessário para alcançar a próxima potência de 2 (min: [16,16])
-        original_size = x.shape[-2:]
-        target_size = [max(2**ceil(log2(s)),16) for s in original_size]
-        padding = [
-            0,  # Sem padding à esquerda
-            target_size[1] - original_size[1],  # Todo o padding à direita
-            0,  # Sem padding em cima
-            target_size[0] - original_size[0]   # Todo o padding em baixo
-        ]
+        # aplica primeiro 1 em top e left, o resto right e bottom (para inputs assimetricos)
 
-        # Aplica o padding unilateral (somente nas extremidades finais)
-        x_padded = F.pad(x, padding, mode='constant', value=0)
+
+        x_padded, original_size = self.add_padding(x,min_size=16)
 
         enc1 = self.inc(x_padded)
         enc2 = self.down1(enc1)
@@ -306,7 +319,7 @@ class LargeUFourierConvLayer(nn.Module):
         logits = self.outc(dec)
 
         # Remove o padding
-        out3 = logits[..., :original_size[0], :original_size[1]]
+        out3 = self.remove_padding(logits, original_size=original_size)
     
         # Combinação dos caminhos
         out = self.act1(out1+out2)
@@ -351,6 +364,27 @@ class UFourierConvLayer(nn.Module):
         # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
+    def add_padding(self, x, min_size):
+        original_size = x.shape[-2:]
+        target_size = [max(2**ceil(log2(s)), min_size) for s in original_size]
+        
+        padding = []
+        for orig, target in zip(original_size, target_size):
+            pad_total = target - orig
+            pad_start = 1  # Sempre adiciona 1 de padding no início
+            pad_end = pad_total - pad_start
+            padding.extend([pad_start, pad_end])
+        
+        #  ta como [top, bottom, left, right]
+        # left, right, top and bottom on F.pad documentation
+        padding = [padding[2], padding[3], padding[0], padding[1]]
+        padded_x = F.pad(x, padding)
+        return padded_x, original_size
+
+    def remove_padding(self, padded_x, original_size):
+        # Removemos o padding começando da posição (1,1)
+        return padded_x[..., 1:1+original_size[0], 1:1+original_size[1]]
+
     def forward(self, x):
         batchsize = x.shape[0]
 
@@ -373,22 +407,12 @@ class UFourierConvLayer(nn.Module):
         
         out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
         
-    
-        
         # Caminho 3: U-Net simplificada maior
-
         # Calcula o padding necessário para alcançar a próxima potência de 2 (min: [8,8])
-        original_size = x.shape[-2:]
-        target_size = [max(2**ceil(log2(s)),8) for s in original_size]
-        padding = [
-            0,  # Sem padding à esquerda
-            target_size[1] - original_size[1],  # Todo o padding à direita
-            0,  # Sem padding em cima
-            target_size[0] - original_size[0]   # Todo o padding em baixo
-        ]
+        # aplica primeiro 1 em top e left, o resto right e bottom (para inputs assimetricos)
 
-        # Aplica o padding unilateral (somente nas extremidades finais)
-        x_padded = F.pad(x, padding, mode='constant', value=0)
+
+        x_padded, original_size = self.add_padding(x,min_size=8)
 
         enc1 = self.inc(x_padded)
         enc2 = self.down1(enc1)
@@ -400,7 +424,7 @@ class UFourierConvLayer(nn.Module):
         logits = self.outc(dec)
 
         # Remove o padding
-        out3 = logits[..., :original_size[0], :original_size[1]]
+        out3 = self.remove_padding(logits, original_size=original_size)
     
         # Combinação dos caminhos
         out = self.act1(out1+out2)
@@ -443,6 +467,27 @@ class SmallUFourierConvLayer(nn.Module):
         # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
+    def add_padding(self, x, min_size):
+        original_size = x.shape[-2:]
+        target_size = [max(2**ceil(log2(s)), min_size) for s in original_size]
+        
+        padding = []
+        for orig, target in zip(original_size, target_size):
+            pad_total = target - orig
+            pad_start = 1  # Sempre adiciona 1 de padding no início
+            pad_end = pad_total - pad_start
+            padding.extend([pad_start, pad_end])
+        
+        #  ta como [top, bottom, left, right]
+        # left, right, top and bottom on F.pad documentation
+        padding = [padding[2], padding[3], padding[0], padding[1]]
+        padded_x = F.pad(x, padding)
+        return padded_x, original_size
+
+    def remove_padding(self, padded_x, original_size):
+        # Removemos o padding começando da posição (1,1)
+        return padded_x[..., 1:1+original_size[0], 1:1+original_size[1]]
+
     def forward(self, x):
         batchsize = x.shape[0]
 
@@ -464,23 +509,13 @@ class SmallUFourierConvLayer(nn.Module):
         out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
         
         out1 = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)))
-        
-    
-        
+
         # Caminho 3: U-Net simplificada maior
-
         # Calcula o padding necessário para alcançar a próxima potência de 2 (min: [4,4])
-        original_size = x.shape[-2:]
-        target_size = [max(2**ceil(log2(s)),4) for s in original_size]
-        padding = [
-            0,  # Sem padding à esquerda
-            target_size[1] - original_size[1],  # Todo o padding à direita
-            0,  # Sem padding em cima
-            target_size[0] - original_size[0]   # Todo o padding em baixo
-        ]
+        # aplica primeiro 1 em top e left, o resto right e bottom (para inputs assimetricos)
 
-        # Aplica o padding unilateral (somente nas extremidades finais)
-        x_padded = F.pad(x, padding, mode='constant', value=0)
+
+        x_padded, original_size = self.add_padding(x,min_size=4)
 
         enc1 = self.inc(x_padded)
         enc2 = self.down1(enc1)
@@ -490,7 +525,7 @@ class SmallUFourierConvLayer(nn.Module):
         logits = self.outc(dec)
 
         # Remove o padding
-        out3 = logits[..., :original_size[0], :original_size[1]]
+        out3 = self.remove_padding(logits, original_size=original_size)
     
         # Combinação dos caminhos
         out = self.act1(out1+out2)
@@ -537,6 +572,27 @@ class UFourierConvLayer_conv1x1(nn.Module):
         # (batch, in_channel, x, y), (in_channel, out_channel, x, y)
         return torch.einsum("bixy,ioxy->boxy", input, weights)
 
+    def add_padding(self, x, min_size):
+        original_size = x.shape[-2:]
+        target_size = [max(2**ceil(log2(s)), min_size) for s in original_size]
+        
+        padding = []
+        for orig, target in zip(original_size, target_size):
+            pad_total = target - orig
+            pad_start = 1  # Sempre adiciona 1 de padding no início
+            pad_end = pad_total - pad_start
+            padding.extend([pad_start, pad_end])
+        
+        #  ta como [top, bottom, left, right]
+        # left, right, top and bottom on F.pad documentation
+        padding = [padding[2], padding[3], padding[0], padding[1]]
+        padded_x = F.pad(x, padding)
+        return padded_x, original_size
+
+    def remove_padding(self, padded_x, original_size):
+        # Removemos o padding começando da posição (1,1)
+        return padded_x[..., 1:1+original_size[0], 1:1+original_size[1]]
+
     def forward(self, x):
         batchsize = x.shape[0]
         
@@ -553,19 +609,11 @@ class UFourierConvLayer_conv1x1(nn.Module):
         out2 = self.conv1x1(x)
         
         # Caminho 3: U-Net simplificada maior
-
         # Calcula o padding necessário para alcançar a próxima potência de 2 (min: [8,8])
-        original_size = x.shape[-2:]
-        target_size = [max(2**ceil(log2(s)),8) for s in original_size]
-        padding = [
-            0,  # Sem padding à esquerda
-            target_size[1] - original_size[1],  # Todo o padding à direita
-            0,  # Sem padding em cima
-            target_size[0] - original_size[0]   # Todo o padding em baixo
-        ]
+        # aplica primeiro 1 em top e left, o resto right e bottom (para inputs assimetricos)
 
-        # Aplica o padding unilateral (somente nas extremidades finais)
-        x_padded = F.pad(x, padding, mode='constant', value=0)
+
+        x_padded, original_size = self.add_padding(x,min_size=8)
 
         enc1 = self.inc(x_padded)
         enc2 = self.down1(enc1)
@@ -577,7 +625,7 @@ class UFourierConvLayer_conv1x1(nn.Module):
         logits = self.outc(dec)
 
         # Remove o padding
-        out3 = logits[..., :original_size[0], :original_size[1]]
+        out3 = self.remove_padding(logits, original_size=original_size)
     
         # Combinação dos caminhos
         out = self.act1(out1+out2)
