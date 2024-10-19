@@ -39,6 +39,8 @@ import network
 from dataset import FWIDataset
 from scheduler import WarmupMultiStepLR
 import transforms as T
+from network import DARTSNet
+from layers import PRIMITIVES
 
 step = 0
 
@@ -83,6 +85,19 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler,
         step += 1
         lr_scheduler.step()
 
+def log_alphas(model, writer, step):
+    if isinstance(model, DARTSNet):
+        for name, module in model.named_modules():
+            if hasattr(module, 'alphas'):
+                alphas = module.alphas
+                for i, alpha in enumerate(alphas):
+                    for j, primitive in enumerate(PRIMITIVES):
+                        writer.add_scalar(f'{name}_alpha_{i}_{primitive}', alpha[j].item(), step)
+                
+                #for i, alpha in enumerate(alphas):
+                #    primitive = PRIMITIVES[i]
+                #    writer.add_scalar(f'{name}_alpha_{i}_{primitive}', alpha.item(), step)
+
 
 def evaluate(model, criterion, dataloader, device, writer):
     model.eval()
@@ -105,6 +120,10 @@ def evaluate(model, criterion, dataloader, device, writer):
         writer.add_scalar('loss', metric_logger.loss.global_avg, step)
         writer.add_scalar('loss_g1v', metric_logger.loss_g1v.global_avg, step)
         writer.add_scalar('loss_g2v', metric_logger.loss_g2v.global_avg, step)
+
+        # Log alphas if the model is DARTSNet
+        log_alphas(model, writer, step)
+
     return metric_logger.loss.global_avg
 
 
@@ -301,7 +320,7 @@ def parse_args():
     parser.add_argument('-l', '--log-path', default='Invnet_models', help='path to parent folder to save logs')
     parser.add_argument('-n', '--save-name', default='fcn_l1loss_ffb', help='folder name for this experiment')
     parser.add_argument('-s', '--suffix', type=str, default=None, help='subfolder name for this run')
-
+    
     # Model related
     parser.add_argument('-m', '--model', type=str, help='inverse model name')
     parser.add_argument('-um', '--up-mode', default=None, help='upsampling layer mode such as "nearest", "bicubic", etc.')

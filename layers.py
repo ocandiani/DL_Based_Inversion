@@ -219,7 +219,7 @@ class OutConv(nn.Module):
 #######################################
     
 class LargeUFourierConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2, input_dim, bilinear=False):
+    def __init__(self, in_channels, out_channels, modes1, modes2, bilinear=False):
         super(LargeUFourierConvLayer, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -317,7 +317,7 @@ class LargeUFourierConvLayer(nn.Module):
         return out
     
 class UFourierConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2, input_dim, bilinear=False):
+    def __init__(self, in_channels, out_channels, modes1, modes2, bilinear=False):
         super(UFourierConvLayer, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -411,7 +411,7 @@ class UFourierConvLayer(nn.Module):
         return out
     
 class SmallUFourierConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2, input_dim, bilinear=False):
+    def __init__(self, in_channels, out_channels, modes1, modes2, bilinear=False):
         super(SmallUFourierConvLayer, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -679,85 +679,92 @@ class SpectralConv2d_res(nn.Module):
 
         return x
 
-# class FourierConvBlock_Tanh(nn.Module):
-#     def __init__(self, in_fea, out_fea, modes1, modes2, norm='bn'):
-#         super(FourierConvBlock_Tanh, self).__init__()
-#         layers = [FourierConvLayer(in_fea, out_fea, modes1, modes2)]
-#         if norm in NORM_LAYERS:
-#             layers.append(NORM_LAYERS[norm](out_fea))
-#         layers.append(nn.Tanh())
-#         self.layers = nn.Sequential(*layers)
+PRIMITIVES = [
+    'skip_connect',
+    'spectral_conv2d',
+    'spectral_conv2d_res',
+    'conv_block',
+    'double_conv',
+    'u_fourier',
+    'small_u_fourier',
+]
 
-#     def forward(self, x):
-#         return self.layers(x)
+class MixedOp(nn.Module):
+    def __init__(self, C_in, C_out, stride, modes1, modes2):
+        super(MixedOp, self).__init__()
+        self._ops = nn.ModuleList()
+        for primitive in PRIMITIVES:
+            if primitive == 'skip_connect':
+                op = Identity() if C_in == C_out else FactorizedReduce(C_in, C_out)
+            elif primitive == 'spectral_conv2d':
+                op = SpectralConv2d(C_in, C_out, modes1, modes2)
+            elif primitive == 'spectral_conv2d_res':
+                op = SpectralConv2d_res(C_in, C_out, modes1, modes2)
+            elif primitive == 'conv_block':
+                op = ConvBlock(C_in, C_out)
+            elif primitive == 'double_conv':
+                op = DoubleConv(C_in,C_out)
+            elif primitive == 'u_fourier':
+                op == UFourierConvLayer(C_in, C_out, modes1, modes2)
+            elif primitive == 'small_u_fourier':
+                op == SmallUFourierConvLayer(C_in, C_out, modes1, modes2)
+            self._ops.append(op)
 
-# class FourierDeconvBlock(nn.Module):
-#     def __init__(self, in_fea, out_fea, modes1, modes2, norm='bn'):
-#         super(FourierDeconvBlock, self).__init__()
-#         layers = [FourierConvLayer(in_fea, out_fea, modes1, modes2)]
-#         if norm in NORM_LAYERS:
-#             layers.append(NORM_LAYERS[norm](out_fea))
-#         layers.append(nn.LeakyReLU(0.2, inplace=True))
-#         self.layers = nn.Sequential(*layers)
+    def forward(self, x, weights):
+        return sum(w * op(x) for w, op in zip(weights, self._ops))
 
-#     def forward(self, x):
-#         return self.layers(x)
+class Cell(nn.Module):
+    def __init__(self, steps, C_prev, C, modes1, modes2):
+        super(Cell, self).__init__()
+        self.preprocess = ReLUConvBN(C_prev, C, 1, 1, 0)
+        self._steps = steps
+        self._ops = nn.ModuleList()
+        for i in range(self._steps):
+            op = MixedOp(C, C, stride=1, modes1=modes1, modes2=modes2)
+            self._ops.append(op)
 
-# class SpectralConv2d(nn.Module):
-#     def __init__(self, in_channels, out_channels, n_modes, resdiual=True, dropout=0.0):
-#         super(SpectralConv2d, self).__init__()
+    def forward(self, s0, weights):
+        s0 = self.preprocess(s0)
+        states = [s0]
+        for i in range(self._steps):
+            s = self._ops[i](states[-1], weights[i])
+            states.append(s)
+        return states[-1]
 
-#         """
-#         2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
-#         """
+class DARTSBlock(nn.Module):
+    def __init__(self, C_in, C_out, modes1, modes2, steps=4):
+        super(DARTSBlock, self).__init__()
+        self.cell = Cell(steps, C_in, C_out, modes1, modes2)
+        self.alphas = nn.Parameter(torch.randn(steps, len(PRIMITIVES)))
 
-#         self.in_channels = in_channels
-#         self.out_channels = out_channels
-#         self.n_modes = n_modes
-#         self.linear = nn.Linear(in_channels, out_channels)
-#         self.residual = resdiual
-#         self.act = nn.ReLU(inplace=True)
+    def forward(self, x):
+        weights = F.softmax(self.alphas, dim=-1)
+        return self.cell(x, weights)
 
-#         self.scale = (1 / (in_channels * out_channels))
-#         fourier_weight = [nn.Parameter(torch.FloatTensor(
-#             in_channels, out_channels, n_modes, n_modes, 2)) for _ in range(2)]
-#         self.fourier_weight = nn.ParameterList(fourier_weight)
-#         for param in self.fourier_weight:
-#             nn.init.xavier_normal_(param, gain=1/(in_channels*out_channels))
-#     # Complex multiplication
-#     def compl_mul2d(self, input, weights):
-#         # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
-#         return torch.einsum("bixy,ioxy->boxy", input, weights)
+class Identity(nn.Module):
+    def forward(self, x):
+        return x
 
-#     def forward(self, x):
-#         x = x.permute(0, 2, 3, 1)
-#         # x.shape == [batch_size, grid_size, grid_size, in_dim]
-#         res = self.linear(x)
-#         # res.shape == [batch_size, grid_size, grid_size, out_dim]
+class FactorizedReduce(nn.Module):
+    def __init__(self, C_in, C_out):
+        super(FactorizedReduce, self).__init__()
+        self.conv1 = nn.Conv2d(C_in, C_out // 2, 1, stride=1, padding=0, bias=False)
+        self.conv2 = nn.Conv2d(C_in, C_out // 2, 1, stride=1, padding=0, bias=False)
+        self.bn = nn.BatchNorm2d(C_out)
 
-#         x = rearrange(x, 'b m n i -> b i m n')
-#         # x.shape == [batch_size, in_dim, grid_size, grid_size]
-#         batchsize = x.shape[0]
-#         #Compute Fourier coeffcients up to factor of e^(- something constant)
-#         x_ft = torch.fft.rfft2(x)
+    def forward(self, x):
+        out = torch.cat([self.conv1(x), self.conv2(x[:,:,1:,1:])], dim=1)
+        out = self.bn(out)
+        return out
 
-#         # Multiply relevant Fourier modes
-#         out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
-#         out_ft[:, :, :self.n_modes, :self.n_modes] = \
-#             self.compl_mul2d(x_ft[:, :, :self.n_modes, :self.n_modes], self.fourier_weight[0])
-#         out_ft[:, :, -self.n_modes:, :self.n_modes] = \
-#             self.compl_mul2d(x_ft[:, :, -self.n_modes:, :self.n_modes], self.fourier_weight[1])
+class ReLUConvBN(nn.Module):
+    def __init__(self, C_in, C_out, kernel_size, stride, padding):
+        super(ReLUConvBN, self).__init__()
+        self.op = nn.Sequential(
+            nn.ReLU(inplace=False),
+            nn.Conv2d(C_in, C_out, kernel_size, stride=stride, padding=padding, bias=False),
+            nn.BatchNorm2d(C_out)
+        )
 
-#         #Return to physical space
-#         x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
-
-#         x = rearrange(x, 'b i m n -> b m n i')
-#         # x.shape == [batch_size, grid_size, grid_size, out_dim]
-
-#         if self.residual:
-#             x = self.act(x + res)
-
-#         #x = x.transpose(0, 2, 3, 1)
-#         x = x.permute(0, 3, 1, 2)
-
-#         return x
+    def forward(self, x):
+        return self.op(x)
