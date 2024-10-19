@@ -10,28 +10,40 @@ from matplotlib.colors import ListedColormap
 rainbow_cmap = ListedColormap(np.load('rainbow256.npy'))
 
 def plot_velocity(output, target, path, vmin=None, vmax=None):
-    fig, ax = plt.subplots(1, 2, figsize=(11, 5))
+    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+
     if vmin is None or vmax is None:
         vmax, vmin = np.max(target), np.min(target)
-    im = ax[0].matshow(output, cmap=rainbow_cmap, vmin=vmin, vmax=vmax)
+
+    # Plot prediction
+    im0 = ax[0].matshow(output, cmap=rainbow_cmap, vmin=vmin, vmax=vmax)
     ax[0].set_title('Prediction', y=1.08)
-    ax[1].matshow(target, cmap=rainbow_cmap, vmin=vmin, vmax=vmax)
+
+    # Plot ground truth
+    im1 = ax[1].matshow(target, cmap=rainbow_cmap, vmin=vmin, vmax=vmax)
     ax[1].set_title('Ground Truth', y=1.08)
-    
+
+    # Calculate and plot the difference
+    diff = output - target
+    im2 = ax[2].matshow(diff, cmap='RdYlGn', vmin=-vmax, vmax=vmax)
+    ax[2].set_title('Difference', y=1.08)
+
+    # Set labels and ticks for all axes
     for axis in ax:
-        # axis.set_xticks(range(0, 70, 10))
-        # axis.set_xticklabels(range(0, 1050, 150))
-        # axis.set_yticks(range(0, 70, 10))
-        # axis.set_yticklabels(range(0, 1050, 150))
         axis.set_xticks(range(0, 70, 10))
         axis.set_xticklabels(range(0, 700, 100))
         axis.set_yticks(range(0, 70, 10))
         axis.set_yticklabels(range(0, 700, 100))
-
         axis.set_ylabel('Depth (m)', fontsize=12)
         axis.set_xlabel('Offset (m)', fontsize=12)
 
-    fig.colorbar(im, ax=ax, shrink=0.75, label='Velocity(m/s)')
+
+    # Add colorbars
+    fig.colorbar(im0, ax=ax[0], shrink=0.75, label='Velocity(m/s)')
+    fig.colorbar(im1, ax=ax[1], shrink=0.75, label='Velocity(m/s)')
+    fig.colorbar(im2, ax=ax[2], shrink=0.75, label='Difference(m/s)')
+
+    plt.tight_layout()
     plt.savefig(path)
     plt.close('all')
 
