@@ -1,2 +1,5 @@
 __pycache__
 alpha_checking.py
+*_models/
+slurm*
+*.out
