@@ -166,7 +166,7 @@ class InversionNet(nn.Module):
         return x
 
 class FNONet(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, **kwargs):
         super(FNONet, self).__init__()
         self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
         self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
@@ -228,7 +228,7 @@ class FNONet(nn.Module):
         return x
     
 class UFNONet(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, **kwargs):
         super(UFNONet, self).__init__()
         self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
         self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
@@ -290,7 +290,7 @@ class UFNONet(nn.Module):
         return x
 
 class DARTSNet(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, steps=4, **kwargs):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, steps=4, **kwargs):
         super(DARTSNet, self).__init__()
         
         # Encoder Part (fixed)
@@ -348,7 +348,7 @@ class DARTSNet(nn.Module):
 ##### remove before finishing project #####
 
 # class UFNONet_legacy(nn.Module):
-#     def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
+#     def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, **kwargs):
 #         super(UFNONet_legacy, self).__init__()
 #         self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
 #         self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
