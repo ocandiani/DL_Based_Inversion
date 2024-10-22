@@ -575,7 +575,6 @@ class UFourierConvLayer_conv1x1(nn.Module):
     def add_padding(self, x, min_size):
         original_size = x.shape[-2:]
         target_size = [max(2**ceil(log2(s)), min_size) for s in original_size]
-        
         padding = []
         for orig, target in zip(original_size, target_size):
             pad_total = target - orig
@@ -729,13 +728,13 @@ class SpectralConv2d_res(nn.Module):
 
 PRIMITIVES = [
     'skip_connect',
-    'spectral_conv2d',
+    #'spectral_conv2d',
     'spectral_conv2d_res',
     'conv_block',
     'double_conv',
     'large_u_fourier',
     'u_fourier',
-    'small_u_fourier',
+    #'small_u_fourier',
 ]
 
 class MixedOp(nn.Module):

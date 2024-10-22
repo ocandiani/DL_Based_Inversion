@@ -290,7 +290,7 @@ class UFNONet(nn.Module):
         return x
 
 class DARTSNet(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, steps=4, **kwargs):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, steps=3, **kwargs):
         super(DARTSNet, self).__init__()
         
         # Encoder Part (fixed)
@@ -534,6 +534,6 @@ model_dict = {
     'UPFWI': FCN4_Deep_Resize_2,
     'FNONet': FNONet,
     'UFNONet': UFNONet,
-    'DARTSNet': DARTSNet,    
+    'DARTSNet': DARTSNet,
 }
 
