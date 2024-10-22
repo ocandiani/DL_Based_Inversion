@@ -61,11 +61,7 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler,
     for data, label in metric_logger.log_every(dataloader, print_freq, header):
         start_time = time.time()
         optimizer.zero_grad()
-        ## precisão half ##
-        #data, label = data.half().to(device), label.half().to(device)
         data, label = data.to(device), label.to(device)
-        #print('half precision')
-        ## precisão half ##
         output = model(data)
         loss, loss_g1v, loss_g2v = criterion(output, label)
         loss.backward()
@@ -94,9 +90,9 @@ def log_alphas(model, writer, step):
                     for j, primitive in enumerate(PRIMITIVES):
                         writer.add_scalar(f'{name}_alpha_{i}_{primitive}', alpha[j].item(), step)
                 
-                #for i, alpha in enumerate(alphas):
-                #    primitive = PRIMITIVES[i]
-                #    writer.add_scalar(f'{name}_alpha_{i}_{primitive}', alpha.item(), step)
+                for i, alpha in enumerate(alphas):
+                   primitive = PRIMITIVES[i]
+                   writer.add_scalar(f'{name}_alpha_{i}_{primitive}', alpha.item(), step)
 
 
 def evaluate(model, criterion, dataloader, device, writer):
@@ -263,8 +259,12 @@ def main(args):
 
     print("Model size:")
     mem_allocated = torch.cuda.memory_allocated(0) / 1024**2
+    total = torch.cuda.get_device_properties(0).total_memory / 1024**2
+    free = total - mem_allocated
+    print(f"Total GPU memory: {total:.2f} MB")
     print(f"Allocated memory: {mem_allocated:.2f} MB")
     print(f"Model param number: {sum(p.numel() for p in model.parameters())}")
+    print(f"Free memory: {free:.2f} MB")
     print('Start training')
     start_time = time.time()
     best_loss = 10
