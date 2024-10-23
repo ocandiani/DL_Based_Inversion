@@ -89,10 +89,6 @@ def log_alphas(model, writer, step):
                 for i, alpha in enumerate(alphas):
                     for j, primitive in enumerate(PRIMITIVES):
                         writer.add_scalar(f'{name}_alpha_{i}_{primitive}', alpha[j].item(), step)
-                
-                for i, alpha in enumerate(alphas):
-                   primitive = PRIMITIVES[i]
-                   writer.add_scalar(f'{name}_alpha_{i}_{primitive}', alpha[j].item(), step)
 
 
 
