@@ -290,7 +290,7 @@ class UFNONet(nn.Module):
         return x
 
 class DARTSNet(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, steps=1, **kwargs):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, steps=3, **kwargs):
         super(DARTSNet, self).__init__()
         
         # Encoder Part (fixed)
