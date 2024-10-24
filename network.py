@@ -36,6 +36,7 @@ from layers import (
     Conv2DwithBN,
     Conv2DwithBN_Tanh,
     DARTSBlock,
+    DoubleConv,
     #DARTSBlock_Large,
     )
 
@@ -343,6 +344,76 @@ class DARTSNet(nn.Module):
         x = self.deconv6(x)
         return x
     
+class BestArch(nn.Module):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
+        super(BestArch, self).__init__()
+        self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
+        self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock2_2 = ConvBlock(dim2, dim2, kernel_size=(3, 1), padding=(1, 0))
+        self.convblock3_1 = ConvBlock(dim2, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock3_2 = ConvBlock(dim2, dim2, kernel_size=(3, 1), padding=(1, 0))
+        self.convblock4_1 = ConvBlock(dim2, dim3, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock4_2 = ConvBlock(dim3, dim3, kernel_size=(3, 1), padding=(1, 0))
+        self.convblock5_1 = ConvBlock(dim3, dim3, stride=2)
+        self.convblock5_2 = ConvBlock(dim3, dim3)
+        self.convblock6_1 = ConvBlock(dim3, dim4, stride=2)
+        self.convblock6_2 = ConvBlock(dim4, dim4)
+        self.convblock7_1 = ConvBlock(dim4, dim4, stride=2)
+        self.convblock7_2 = ConvBlock(dim4, dim4)
+        self.convblock8 = ConvBlock(dim4, dim5, kernel_size=(8, ceil(70 * sample_spatial / 8)), padding=0)
+        
+        self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
+        self.deconv1_2 = UFourierConvLayer(dim5, dim5, min(modes1,3), min(modes2,3))
+        self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
+        self.deconv2_2 = SpectralConv2d_res(dim4, dim4, min(modes1,6), min(modes2,6))
+        self.deconv2_3 = DoubleConv(dim4, dim4)
+        self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
+        self.deconv3_2 = LargeUFourierConvLayer(dim3, dim3, min(modes1,11), min(modes2,11))
+        self.deconv3_3 = LargeUFourierConvLayer(dim3, dim3, min(modes1,11), min(modes2,11))
+        self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
+        self.deconv4_2 = SpectralConv2d_res(dim2, dim2, min(modes1,21), min(modes2,21))
+        self.deconv4_3 = SpectralConv2d_res(dim2, dim2, min(modes1,21), min(modes2,21))
+        self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
+        self.deconv5_2 = DoubleConv(dim1, dim1)
+        self.deconv5_3 = SpectralConv2d_res(dim1, dim1, min(modes1,41), min(modes2,41))
+        self.deconv6 = ConvBlock_Tanh(dim1, 1)
+        
+    def forward(self,x):
+        # Encoder Part
+        x = self.convblock1(x) # (None, 32, 500, 70)
+        x = self.convblock2_1(x) # (None, 64, 250, 70)
+        x = self.convblock2_2(x) # (None, 64, 250, 70)
+        x = self.convblock3_1(x) # (None, 64, 125, 70)
+        x = self.convblock3_2(x) # (None, 64, 125, 70)
+        x = self.convblock4_1(x) # (None, 128, 63, 70) 
+        x = self.convblock4_2(x) # (None, 128, 63, 70)
+        x = self.convblock5_1(x) # (None, 128, 32, 35) 
+        x = self.convblock5_2(x) # (None, 128, 32, 35)
+        x = self.convblock6_1(x) # (None, 256, 16, 18) 
+        x = self.convblock6_2(x) # (None, 256, 16, 18)
+        x = self.convblock7_1(x) # (None, 256, 8, 9) 
+        x = self.convblock7_2(x) # (None, 256, 8, 9)
+        x = self.convblock8(x) # (None, 512, 1, 1)
+        
+        # Decoder Part 
+        x = self.deconv1_1(x) # (None, 512, 5, 5)
+        x = self.deconv1_2(x) # (None, 512, 5, 5)
+        x = self.deconv2_1(x) # (None, 256, 10, 10) 
+        x = self.deconv2_2(x) # (None, 256, 10, 10)
+        x = self.deconv2_3(x) # (None, 256, 10, 10)
+        x = self.deconv3_1(x) # (None, 128, 20, 20) 
+        x = self.deconv3_2(x) # (None, 128, 20, 20)
+        x = self.deconv3_3(x) # (None, 128, 20, 20)
+        x = self.deconv4_1(x) # (None, 64, 40, 40) 
+        x = self.deconv4_2(x) # (None, 64, 40, 40)
+        x = self.deconv4_3(x) # (None, 64, 40, 40)
+        x = self.deconv5_1(x) # (None, 32, 80, 80)
+        x = self.deconv5_2(x) # (None, 32, 80, 80)
+        x = self.deconv5_3(x) # (None, 32, 80, 80)
+        x = F.pad(x, [-5, -5, -5, -5], mode="constant", value=0) # (None, 32, 70, 70) 125, 100
+        x = self.deconv6(x) # (None, 1, 70, 70)
+        return x
+    
 ##### UFNONet_legacy                  #####
 ##### used in early experiments.      #####
 ##### remove before finishing project #####
@@ -535,5 +606,6 @@ model_dict = {
     'FNONet': FNONet,
     'UFNONet': UFNONet,
     'DARTSNet': DARTSNet,
+    'BestArch': BestArch,
 }
 
