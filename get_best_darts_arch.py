@@ -40,7 +40,8 @@ def get_best_arch_from_state_dict(state_dict):
             for step_alphas in alphas:
                 best_op_index = step_alphas.argmax().item()
                 best_op = PRIMITIVES[best_op_index]
-                best_ops.append(best_op)
+                step_alphas_dict = dict(zip(PRIMITIVES, step_alphas.tolist()))
+                best_ops.append({'best_op':best_op, 'alphas':step_alphas_dict})
             best_arch.append((block_name, best_ops))
     return best_arch
 
