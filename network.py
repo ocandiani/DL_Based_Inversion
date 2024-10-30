@@ -185,15 +185,15 @@ class FNONet(nn.Module):
         self.convblock8 = ConvBlock(dim4, dim5, kernel_size=(8, ceil(70 * sample_spatial / 8)), padding=0)
 
         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
-        self.deconv1_2 = SpectralConv2d_res(dim5, dim5, min(modes1,3), min(modes2,3))
+        self.deconv1_2 = SpectralConv2d(dim5, dim5, min(modes1,3), min(modes2,3))
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
-        self.deconv2_2 = SpectralConv2d_res(dim4, dim4, min(modes1,6), min(modes2,6))
+        self.deconv2_2 = SpectralConv2d(dim4, dim4, min(modes1,6), min(modes2,6))
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
-        self.deconv3_2 = SpectralConv2d_res(dim3, dim3, min(modes1,11), min(modes2,11))
+        self.deconv3_2 = SpectralConv2d(dim3, dim3, min(modes1,11), min(modes2,11))
         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
-        self.deconv4_2 = SpectralConv2d_res(dim2, dim2, min(modes1,21), min(modes2,21))
+        self.deconv4_2 = SpectralConv2d(dim2, dim2, min(modes1,21), min(modes2,21))
         self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
-        self.deconv5_2 = SpectralConv2d_res(dim1, dim1, min(modes1,41), min(modes2,41))
+        self.deconv5_2 = SpectralConv2d(dim1, dim1, min(modes1,41), min(modes2,41))
         self.deconv6 = ConvBlock_Tanh(dim1, 1)
         
     def forward(self,x):
@@ -247,15 +247,15 @@ class UFNONet(nn.Module):
         self.convblock8 = ConvBlock(dim4, dim5, kernel_size=(8, ceil(70 * sample_spatial / 8)), padding=0)
         
         self.deconv1_1 = DeconvBlock(dim5, dim5, kernel_size=5)
-        self.deconv1_2 = UFourierConvLayer(dim5, dim5, min(modes1,3), min(modes2,3))
+        self.deconv1_2 = UFourierConvLayer_conv1x1(dim5, dim5, min(modes1,3), min(modes2,3))
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
-        self.deconv2_2 = UFourierConvLayer(dim4, dim4, min(modes1,6), min(modes2,6))
+        self.deconv2_2 = UFourierConvLayer_conv1x1(dim4, dim4, min(modes1,6), min(modes2,6))
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
-        self.deconv3_2 = UFourierConvLayer(dim3, dim3, min(modes1,11), min(modes2,11))
+        self.deconv3_2 = UFourierConvLayer_conv1x1(dim3, dim3, min(modes1,11), min(modes2,11))
         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
-        self.deconv4_2 = LargeUFourierConvLayer(dim2, dim2, min(modes1,21), min(modes2,21))
+        self.deconv4_2 = UFourierConvLayer_conv1x1(dim2, dim2, min(modes1,21), min(modes2,21))
         self.deconv5_1 = DeconvBlock(dim2, dim1, kernel_size=4, stride=2, padding=1)
-        self.deconv5_2 = LargeUFourierConvLayer(dim1, dim1, min(modes1,41), min(modes2,41))
+        self.deconv5_2 = UFourierConvLayer_conv1x1(dim1, dim1, min(modes1,41), min(modes2,41))
         self.deconv6 = ConvBlock_Tanh(dim1, 1)
         
     def forward(self,x):

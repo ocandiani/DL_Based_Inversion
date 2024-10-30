@@ -548,7 +548,7 @@ class UFourierConvLayer_conv1x1(nn.Module):
 
         # Camadas de ativação para FILM
         self.act1 = nn.ReLU(inplace=True)
-        self.act2 = nn.ReLU(inplace=True)
+        #self.act2 = nn.ReLU(inplace=True)
         
         # Caminho 2: Convolução 1x1
         self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
@@ -560,7 +560,9 @@ class UFourierConvLayer_conv1x1(nn.Module):
 
         self.inc = (DoubleConv(in_channels, 64))
         self.down1 = (Down(64, 128))
+        self.conv1 = ConvBlock(128, 128)
         self.down2 = (Down(128, 256))
+        self.conv2 = ConvBlock(256, 256)
         factor = 2 if bilinear else 1
         self.down3 = (Down(256, 512 // factor))
         self.up1 = (Up(512, 256 // factor, bilinear))
@@ -616,7 +618,9 @@ class UFourierConvLayer_conv1x1(nn.Module):
 
         enc1 = self.inc(x_padded)
         enc2 = self.down1(enc1)
+        enc2 = self.conv1(enc2)
         enc3 = self.down2(enc2)
+        enc3 = self.conv2(enc3)
         enc4 = self.down3(enc3)
         dec = self.up1(enc4, enc3)
         dec = self.up2(dec, enc2)
@@ -627,8 +631,9 @@ class UFourierConvLayer_conv1x1(nn.Module):
         out3 = self.remove_padding(logits, original_size=original_size)
     
         # Combinação dos caminhos
-        out = self.act1(out1+out2)
-        out = self.act2(out+out3)
+        #out = self.act1(out1+out2)
+        #out = self.act2(out+out3)
+        out = self.act1(out1+out2+out3)
         
         return out
     
@@ -645,6 +650,11 @@ class SpectralConv2d(nn.Module):
         self.modes1 = modes1 #Number of Fourier modes to multiply, at most floor(N/2) + 1
         self.modes2 = modes2
 
+        # Caminho 2: Convolução 1x1
+        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        # Camadas de ativação para FILM
+        self.act = nn.ReLU(inplace=True)
+
         self.scale = (1 / (in_channels * out_channels))
         self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
         self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
@@ -659,6 +669,8 @@ class SpectralConv2d(nn.Module):
         #Compute Fourier coeffcients up to factor of e^(- something constant)
         x_ft = torch.fft.rfft2(x)
 
+        out_conv = self.conv1x1(x)
+
         # Multiply relevant Fourier modes
         out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
         out_ft[:, :, :self.modes1, :self.modes2] = \
@@ -668,6 +680,7 @@ class SpectralConv2d(nn.Module):
 
         #Return to physical space
         x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
+        x = self.act(x+out_conv)
         return x
     
 class SpectralConv2d_res(nn.Module):
@@ -728,11 +741,11 @@ class SpectralConv2d_res(nn.Module):
 
 PRIMITIVES = [
     'skip_connect',
-    #'spectral_conv2d',
-    'spectral_conv2d_res',
+    'spectral_conv2d',
+    #'spectral_conv2d_res',
     'conv_block',
     'double_conv',
-    'large_u_fourier',
+    #'large_u_fourier',
     'u_fourier',
     #'small_u_fourier',
 ]
@@ -755,7 +768,7 @@ class MixedOp(nn.Module):
             elif primitive == 'large_u_fourier':
                 op = LargeUFourierConvLayer(C_in, C_out, modes1, modes2)
             elif primitive == 'u_fourier':
-                op = UFourierConvLayer(C_in, C_out, modes1, modes2)
+                op = UFourierConvLayer_conv1x1(C_in, C_out, modes1, modes2)
             elif primitive == 'small_u_fourier':
                 op = SmallUFourierConvLayer(C_in, C_out, modes1, modes2)
             self._ops.append(op)
