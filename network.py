@@ -369,7 +369,7 @@ class BestArch(nn.Module):
         self.deconv2_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=2, padding=1)
         self.deconv2_2 = ConvBlock(dim4, dim4)
         self.deconv3_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
-        self.deconv3_2 = ConvBlock(dim3, dim3, min(modes1,11), min(modes2,11))
+        self.deconv3_2 = ConvBlock(dim3, dim3)
         self.deconv3_3 = UFourierConvLayer_conv1x1(dim3, dim3, min(modes1,11), min(modes2,11))
         self.deconv3_4 = UFourierConvLayer_conv1x1(dim3, dim3, min(modes1,11), min(modes2,11))
         self.deconv4_1 = DeconvBlock(dim3, dim2, kernel_size=4, stride=2, padding=1)
