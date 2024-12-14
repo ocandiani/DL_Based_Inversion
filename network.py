@@ -343,7 +343,55 @@ class DARTSNet(nn.Module):
         x = F.pad(x, [-5, -5, -5, -5], mode="constant", value=0)
         x = self.deconv6(x)
         return x
-    
+
+class DARTSNet_Projected(nn.Module):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, steps=2, **kwargs):
+        super(DARTSNet_Projected, self).__init__()
+        
+        # Encoder Part (fixed)
+        self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
+        self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock2_2 = ConvBlock(dim2, dim2, kernel_size=(3, 1), padding=(1, 0))
+        self.convblock3_1 = ConvBlock(dim2, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock3_2 = ConvBlock(dim2, dim2, kernel_size=(3, 1), padding=(1, 0))
+        self.convblock4_1 = ConvBlock(dim2, dim3, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock4_2 = ConvBlock(dim3, dim3, kernel_size=(3, 1), padding=(1, 0))
+        self.upsample = nn.Upsample(size=(70, 70), mode='bilinear', align_corners=False)
+        self.convblock4_3 = ConvBlock(dim3, dim3, kernel_size=3, padding=1)
+
+        self.darts1 = DARTSBlock(dim3, dim4, modes1=min(modes1,12), modes2=min(modes2,12), steps=steps)
+        self.darts2 = DARTSBlock(dim4, dim5, modes1=min(modes1,12), modes2=min(modes2,12), steps=steps)
+
+        
+        # Decoder Part (with DARTS search for specific blocks)
+        self.darts3 = DARTSBlock(dim5, dim5, modes1=min(modes1,12), modes2=min(modes2,12), steps=steps)
+        self.darts4 = DARTSBlock(dim5, dim4, modes1=min(modes1,12), modes2=min(modes2,12), steps=steps)
+        self.darts5 = DARTSBlock(dim4, dim3, modes1=min(modes1,12), modes2=min(modes2,12), steps=steps)
+        self.darts6 = DARTSBlock(dim3, dim2, modes1=min(modes1,12), modes2=min(modes2,12), steps=steps)
+        self.darts7 = DARTSBlock(dim2, dim1, modes1=min(modes1,12), modes2=min(modes2,12), steps=steps)
+        self.deconv = ConvBlock_Tanh(dim1, 1)
+        
+    def forward(self, x):
+        # Encoder Part
+        x = self.convblock1(x) # (None, 32, 500, 70)
+        x = self.convblock2_1(x) # (None, 64, 250, 70)
+        x = self.convblock2_2(x) # (None, 64, 250, 70)
+        x = self.convblock3_1(x) # (None, 64, 125, 70)
+        x = self.convblock3_2(x) # (None, 64, 125, 70)
+        x = self.convblock4_1(x) # (None, 128, 63, 70) 
+        x = self.convblock4_2(x) # (None, 128, 63, 70)
+        x = self.upsample(x)     # (None, 128, 70, 70)
+        x = self.convblock4_3(x) # (None, 128, 70, 70)
+        x = self.darts1(x)       # (None, 256, 70, 70)
+        x = self.darts2(x)       # (None, 512, 70, 70)
+        x = self.darts3(x)       # (None, 512, 70, 70)
+        x = self.darts4(x)       # (None, 256, 70, 70)
+        x = self.darts5(x)       # (None, 128, 70, 70)
+        x = self.darts6(x)       # (None, 64, 70, 70)
+        x = self.darts7(x)       # (None, 32, 70, 70)
+        x = self.deconv(x)       # (None, 1, 70, 70)
+        return x
+        
 class BestArch(nn.Module):
     def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
         super(BestArch, self).__init__()
@@ -612,6 +660,7 @@ model_dict = {
     'FNONet': FNONet,
     'UFNONet': UFNONet,
     'DARTSNet': DARTSNet,
+    'PDARTSNet':DARTSNet_Projected,
     'BestArch': BestArch,
 }
 
