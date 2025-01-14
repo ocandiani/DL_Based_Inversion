@@ -38,6 +38,7 @@ from layers import (
     DARTSBlock,
     DoubleConv,
     #DARTSBlock_Large,
+    ReLUConvBN,
     )
 
 # Unet cheatsheet for comparison
@@ -391,6 +392,91 @@ class DARTSNet_Projected(nn.Module):
         x = self.darts7(x)       # (None, 32, 70, 70)
         x = self.deconv(x)       # (None, 1, 70, 70)
         return x
+
+class DARTSNet_Projected_Discrete(nn.Module):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=8, modes2=8, steps=2, **kwargs):
+        super(DARTSNet_Projected_Discrete, self).__init__()
+        
+        # Encoder Part (fixed)
+        self.convblock1 = ConvBlock(5, dim1, kernel_size=(7, 1), stride=(2, 1), padding=(3, 0))
+        self.convblock2_1 = ConvBlock(dim1, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock2_2 = ConvBlock(dim2, dim2, kernel_size=(3, 1), padding=(1, 0))
+        self.convblock3_1 = ConvBlock(dim2, dim2, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock3_2 = ConvBlock(dim2, dim2, kernel_size=(3, 1), padding=(1, 0))
+        self.convblock4_1 = ConvBlock(dim2, dim3, kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))
+        self.convblock4_2 = ConvBlock(dim3, dim3, kernel_size=(3, 1), padding=(1, 0))
+        self.upsample = nn.Upsample(size=(70, 70), mode='bilinear', align_corners=False)
+        self.convblock4_3 = ConvBlock(dim3, dim3, kernel_size=3, padding=1)
+
+
+        self.preprocess1 = ReLUConvBN(dim3, dim4, 1, 1, 0)
+        self.discrete1_1 = ConvBlock(dim4,dim4)
+        self.discrete1_2 = ConvBlock(dim4,dim4)
+
+        self.preprocess2 = ReLUConvBN(dim4, dim5, 1, 1, 0)
+        self.discrete2_1 = UFourierConvLayer_conv1x1(dim5,dim5,modes1=8,modes2=8)
+        self.discrete2_2 = DoubleConv(dim5,dim5)
+        
+        # Decoder Part (with DARTS search for specific blocks)
+
+        self.preprocess3 = ReLUConvBN(dim5, dim5, 1, 1, 0)
+        self.discrete3_1 = SpectralConv2d(dim5,dim5,modes1=8,modes2=8)
+        self.discrete3_2 = SpectralConv2d(dim5,dim5,modes1=8,modes2=8)
+
+
+        self.preprocess4 = ReLUConvBN(dim5, dim4, 1, 1, 0)
+        self.discrete4_1 = SpectralConv2d(dim4,dim4,modes1=8,modes2=8)
+
+
+        self.preprocess5 = ReLUConvBN(dim4, dim3, 1, 1, 0)
+        self.discrete5_1 = UFourierConvLayer_conv1x1(dim3,dim3,modes1=8,modes2=8)
+        self.discrete5_2 = UFourierConvLayer_conv1x1(dim3,dim3,modes1=8,modes2=8)
+
+
+        self.preprocess6 = ReLUConvBN(dim3, dim2, 1, 1, 0)
+        self.discrete6_1 = UFourierConvLayer_conv1x1(dim2,dim2,modes1=8,modes2=8)
+        self.discrete6_2 = ConvBlock(dim2,dim2)
+
+
+        self.preprocess7 = ReLUConvBN(dim2, dim1, 1, 1, 0)
+        self.discrete7_1 = UFourierConvLayer_conv1x1(dim1,dim1,modes1=8,modes2=8)
+        self.discrete7_2 = ConvBlock(dim1,dim1)
+        
+        self.deconv = ConvBlock_Tanh(dim1, 1)
+        
+    def forward(self, x):
+        # Encoder Part
+        x = self.convblock1(x) # (None, 32, 500, 70)
+        x = self.convblock2_1(x) # (None, 64, 250, 70)
+        x = self.convblock2_2(x) # (None, 64, 250, 70)
+        x = self.convblock3_1(x) # (None, 64, 125, 70)
+        x = self.convblock3_2(x) # (None, 64, 125, 70)
+        x = self.convblock4_1(x) # (None, 128, 63, 70) 
+        x = self.convblock4_2(x) # (None, 128, 63, 70)
+        x = self.upsample(x)     # (None, 128, 70, 70)
+        x = self.convblock4_3(x) # (None, 128, 70, 70)
+        x = self.preprocess1(x)  # (None, 256, 70, 70)
+        x = self.discrete1_1(x) 
+        x = self.discrete1_2(x) 
+        x = self.preprocess2(x) # (None, 512, 70, 70) 
+        x = self.discrete2_1(x) 
+        x = self.discrete2_2(x) 
+        x = self.preprocess3(x) # (None, 512, 70, 70)
+        x = self.discrete3_1(x) 
+        x = self.discrete3_2(x) 
+        x = self.preprocess4(x) # (None, 128, 70, 70)
+        x = self.discrete4_1(x)
+        x = self.preprocess5(x) # (None, 128, 70, 70)
+        x = self.discrete5_1(x) 
+        x = self.discrete5_2(x) 
+        x = self.preprocess6(x) # (None, 64, 70, 70)
+        x = self.discrete6_1(x) 
+        x = self.discrete6_2(x) 
+        x = self.preprocess7(x) # (None, 32, 70, 70)
+        x = self.discrete7_1(x) 
+        x = self.discrete7_2(x) 
+        x = self.deconv(x)       # (None, 1, 70, 70)
+        return x
         
 class BestArch(nn.Module):
     def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512, sample_spatial=1.0, modes1=12, modes2=12, **kwargs):
@@ -662,5 +748,6 @@ model_dict = {
     'DARTSNet': DARTSNet,
     'PDARTSNet':DARTSNet_Projected,
     'BestArch': BestArch,
+    'BestArch_Projected': DARTSNet_Projected_Discrete,
 }
 
