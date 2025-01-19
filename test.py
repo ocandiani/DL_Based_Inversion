@@ -94,6 +94,7 @@ def evaluate(model, criterions, dataloader, device, k, ctx,
     l2 = nn.MSELoss()
     print(f'MAE: {l1(label_t, pred_t)}')
     print(f'MSE: {l2(label_t, pred_t)}')
+    print(f'RMSE: {l2(label_t, pred_t)**0.5}')
     ssim_loss = pytorch_ssim.SSIM(window_size=11)
     print(f'SSIM: {ssim_loss(label_t / 2 + 0.5, pred_t / 2 + 0.5)}') # (-1, 1) to (0, 1)
 
