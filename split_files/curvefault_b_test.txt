@@ -1,0 +1,4 @@
+/home/public/openfwi/CurveFault-B/seis8_1_32.npy	/home/public/openfwi/CurveFault-B/vel8_1_32.npy
+/home/public/openfwi/CurveFault-B/seis8_1_33.npy	/home/public/openfwi/CurveFault-B/vel8_1_33.npy
+/home/public/openfwi/CurveFault-B/seis8_1_34.npy	/home/public/openfwi/CurveFault-B/vel8_1_34.npy
+/home/public/openfwi/CurveFault-B/seis8_1_35.npy	/home/public/openfwi/CurveFault-B/vel8_1_35.npy

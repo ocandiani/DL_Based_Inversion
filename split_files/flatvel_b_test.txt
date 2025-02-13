@@ -1,0 +1,4 @@
+/projects/piml_inversion/FWIOpenData/FlatVel_B/data/data57.npy	/projects/piml_inversion/FWIOpenData/FlatVel_B/model/model57.npy
+/projects/piml_inversion/FWIOpenData/FlatVel_B/data/data58.npy	/projects/piml_inversion/FWIOpenData/FlatVel_B/model/model58.npy
+/projects/piml_inversion/FWIOpenData/FlatVel_B/data/data59.npy	/projects/piml_inversion/FWIOpenData/FlatVel_B/model/model59.npy
+/projects/piml_inversion/FWIOpenData/FlatVel_B/data/data60.npy	/projects/piml_inversion/FWIOpenData/FlatVel_B/model/model60.npy

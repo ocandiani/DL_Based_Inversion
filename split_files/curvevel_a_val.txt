@@ -6,7 +6,3 @@
 /home/public/openfwi/CurveVel-A/data/data54.npy	/home/public/openfwi/CurveVel-A/model/model54.npy
 /home/public/openfwi/CurveVel-A/data/data55.npy	/home/public/openfwi/CurveVel-A/model/model55.npy
 /home/public/openfwi/CurveVel-A/data/data56.npy	/home/public/openfwi/CurveVel-A/model/model56.npy
-/home/public/openfwi/CurveVel-A/data/data57.npy	/home/public/openfwi/CurveVel-A/model/model57.npy
-/home/public/openfwi/CurveVel-A/data/data58.npy	/home/public/openfwi/CurveVel-A/model/model58.npy
-/home/public/openfwi/CurveVel-A/data/data59.npy	/home/public/openfwi/CurveVel-A/model/model59.npy
-/home/public/openfwi/CurveVel-A/data/data60.npy	/home/public/openfwi/CurveVel-A/model/model60.npy

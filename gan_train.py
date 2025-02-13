@@ -265,6 +265,14 @@ def main(args):
         for lr_scheduler in lr_schedulers:
             lr_scheduler.milestones = lr_milestones
 
+    print("Model size:")
+    mem_allocated = torch.cuda.memory_allocated(0) / 1024**2
+    total = torch.cuda.get_device_properties(0).total_memory / 1024**2
+    free = total - mem_allocated
+    print(f"Total GPU memory: {total:.2f} MB")
+    print(f"Allocated memory: {mem_allocated:.2f} MB")
+    print(f"Model param number: {sum(p.numel() for p in model.parameters())}")
+    print(f"Free memory: {free:.2f} MB")
     print('Start training')
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
