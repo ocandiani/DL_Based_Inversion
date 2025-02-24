@@ -1,0 +1,12 @@
+/home/public/openfwi/CurveFault-B/seis8_1_20.npy	/home/public/openfwi/CurveFault-B/vel8_1_20.npy
+/home/public/openfwi/CurveFault-B/seis8_1_21.npy	/home/public/openfwi/CurveFault-B/vel8_1_21.npy
+/home/public/openfwi/CurveFault-B/seis8_1_22.npy	/home/public/openfwi/CurveFault-B/vel8_1_22.npy
+/home/public/openfwi/CurveFault-B/seis8_1_23.npy	/home/public/openfwi/CurveFault-B/vel8_1_23.npy
+/home/public/openfwi/CurveFault-B/seis8_1_24.npy	/home/public/openfwi/CurveFault-B/vel8_1_24.npy
+/home/public/openfwi/CurveFault-B/seis8_1_25.npy	/home/public/openfwi/CurveFault-B/vel8_1_25.npy
+/home/public/openfwi/CurveFault-B/seis8_1_26.npy	/home/public/openfwi/CurveFault-B/vel8_1_26.npy
+/home/public/openfwi/CurveFault-B/seis8_1_27.npy	/home/public/openfwi/CurveFault-B/vel8_1_27.npy
+/home/public/openfwi/CurveFault-B/seis8_1_28.npy	/home/public/openfwi/CurveFault-B/vel8_1_28.npy
+/home/public/openfwi/CurveFault-B/seis8_1_29.npy	/home/public/openfwi/CurveFault-B/vel8_1_29.npy
+/home/public/openfwi/CurveFault-B/seis8_1_30.npy	/home/public/openfwi/CurveFault-B/vel8_1_30.npy
+/home/public/openfwi/CurveFault-B/seis8_1_31.npy	/home/public/openfwi/CurveFault-B/vel8_1_31.npy
