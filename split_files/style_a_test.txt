@@ -1,4 +1,0 @@
-/projects/piml_inversion/FWIOpenData/Style_A/data/data131.npy	/projects/piml_inversion/FWIOpenData/Style_A/model/model131.npy
-/projects/piml_inversion/FWIOpenData/Style_A/data/data132.npy	/projects/piml_inversion/FWIOpenData/Style_A/model/model132.npy
-/projects/piml_inversion/FWIOpenData/Style_A/data/data133.npy	/projects/piml_inversion/FWIOpenData/Style_A/model/model133.npy
-/projects/piml_inversion/FWIOpenData/Style_A/data/data134.npy	/projects/piml_inversion/FWIOpenData/Style_A/model/model134.npy
